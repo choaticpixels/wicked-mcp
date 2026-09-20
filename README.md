@@ -1,12 +1,13 @@
 # Wicked MCP server
 
 An MCP server wrapping the public HTTP surface of [WickedAPI](https://api.wickedapi.com)
-(trading data) and [Wicked Reputation](https://stake.wickedapi.com) (on-chain
-agent staking/reputation) — 8 tools, no new backend logic, just a
-protocol-native front door onto the same endpoints WickedAPI's own
-integration cookbooks show calling with plain `requests`. Live at
-**`mcp.wickedapi.com`**; the reputation/staking service and cookbooks live
-in a separate (private) repo.
+(trading data), [Wicked Reputation](https://stake.wickedapi.com) (on-chain
+agent staking/reputation), and [Wicked Registry](https://registry.wickedapi.com)
+(real reliability scores for x402/MCP tools) — 14 tools, no new backend
+logic, just a protocol-native front door onto the same endpoints each
+service's own docs show calling with plain `requests`. Live at
+**`mcp.wickedapi.com`**; the reputation/staking and registry services and
+cookbooks live in separate (private) repos.
 
 ## Tools
 
@@ -22,11 +23,22 @@ in a separate (private) repo.
 - `reputation_tiers()`
 - `reputation_transparency()`
 
+**Wicked Registry** (search/detail work unauthenticated via x402, or with a
+free-tier key — see below; featured/badge/report are always free)
+- `registry_search_tools(category?, protocol?, min_score?, sort?, limit?)`
+- `registry_tool_detail(tool_id)` — score breakdown + real check history
+- `registry_featured_tools()` — top scored tools, always free
+- `registry_tool_badge(tool_id)` — a tool's current score, always free
+- `registry_report_tool(tool_id, reporter, reason, evidence?)` — file a complaint, always free
+- `registry_register_tool(name, endpoint_url, protocol, category, description, owner_wallet, signature, timestamp, schema_url?)` —
+  register a tool you own; you supply a real wallet signature, this tool
+  doesn't sign anything itself
+
 Every tool returns the upstream JSON body plus an `http_status` field.
-Non-2xx responses are returned, not raised — a 402 from WickedAPI carries
-real x402 payment instructions in its body; a 404 from the reputation
-service just means the wallet has never registered. Both are useful data
-for whatever's calling the tool, not failures to hide.
+Non-2xx responses are returned, not raised — a 402 from WickedAPI or Wicked
+Registry carries real x402 payment instructions in its body; a 404 from the
+reputation service just means the wallet has never registered. All of that
+is useful data for whatever's calling the tool, not failures to hide.
 
 ## Run it locally (stdio — for Claude Desktop, `mcp dev`, etc.)
 
@@ -81,6 +93,8 @@ your own key — see above.
 | Env var | Default | Notes |
 |---|---|---|
 | `WICKEDAPI_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every WickedAPI call. |
+| `REGISTRY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every paid Wicked Registry call. |
 | `WICKEDAPI_BASE_URL` | `https://api.wickedapi.com` | Override for local/staging testing only. |
 | `REPUTATION_BASE_URL` | `https://stake.wickedapi.com` | Override for local/staging testing only. |
+| `REGISTRY_BASE_URL` | `https://registry.wickedapi.com` | Override for local/staging testing only. |
 | `RATE_LIMIT_PER_MINUTE` | `30` | HTTP deployment only (`http_app.py`), per client IP. |
