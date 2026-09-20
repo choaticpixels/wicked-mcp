@@ -1,14 +1,20 @@
 """
-WickedAPI + Wicked Reputation + Wicked Registry MCP server.
+WickedAPI + Wicked Reputation + Wicked Registry + Wicked Identity MCP server.
 
-Wraps the public HTTP surface of all three live services as MCP tools — no
+Wraps the public HTTP surface of all four live services as MCP tools — no
 new backend logic, no secrets required for the reputation side (every
 endpoint it calls is public/unauthenticated by design, see
-stake.wickedapi.com's /transparency). WickedAPI's and Wicked Registry's
-market-data/paid endpoints work unauthenticated too, falling back to x402
-pay-per-call; set WICKEDAPI_API_KEY / REGISTRY_API_KEY for free-tier header
-auth instead (see https://api.wickedapi.com and the cookbooks/ in this repo
-for the same pattern applied to LangChain/CrewAI/LlamaIndex/ElizaOS).
+stake.wickedapi.com's /transparency). WickedAPI's, Wicked Registry's, and
+Wicked Identity's paid endpoints work unauthenticated too, falling back to
+x402 pay-per-call; set WICKEDAPI_API_KEY / REGISTRY_API_KEY / IDENTITY_API_KEY
+for free-tier header auth instead (see https://api.wickedapi.com and the
+cookbooks/ in this repo for the same pattern applied to
+LangChain/CrewAI/LlamaIndex/ElizaOS).
+
+Wicked Identity's tools do not sign anything themselves, same principle as
+registry_register_tool below: fetch a nonce, sign it with your own wallet,
+then call the tool with the signature. This server never holds or asks for
+a private key.
 
 Every tool returns the upstream JSON body as-is, plus an `http_status`
 field. Non-2xx responses are NOT raised as exceptions — a 402 from
@@ -24,6 +30,8 @@ Run as a remote server (streamable HTTP, for deployment):
 """
 from __future__ import annotations
 
+import base64
+import json
 import os
 from typing import Any
 
@@ -33,23 +41,54 @@ from mcp.server.mcpserver import MCPServer
 WICKEDAPI_BASE_URL = os.environ.get("WICKEDAPI_BASE_URL", "https://api.wickedapi.com")
 REPUTATION_BASE_URL = os.environ.get("REPUTATION_BASE_URL", "https://stake.wickedapi.com")
 REGISTRY_BASE_URL = os.environ.get("REGISTRY_BASE_URL", "https://registry.wickedapi.com")
+IDENTITY_BASE_URL = os.environ.get("IDENTITY_BASE_URL", "https://verify.wickedapi.com")
 WICKEDAPI_API_KEY = os.environ.get("WICKEDAPI_API_KEY", "")
 REGISTRY_API_KEY = os.environ.get("REGISTRY_API_KEY", "")
+IDENTITY_API_KEY = os.environ.get("IDENTITY_API_KEY", "")
 
 mcp = MCPServer(
     "wicked-reputation",
     instructions=(
         "Tools for WickedAPI (pay-per-call trading data on Base, x402 or "
         "x-api-key), Wicked Reputation (on-chain agent staking/reputation on "
-        "Base), and Wicked Registry (real reliability scores for x402/MCP "
+        "Base), Wicked Registry (real reliability scores for x402/MCP "
         "tools — uptime, latency, schema conformance, from real synthetic "
-        "checks, never fabricated). Reputation tools are all free and "
-        "unauthenticated. WickedAPI and Wicked Registry tools work without a "
-        "key via x402 (a 402 response carries payment instructions in its "
-        "body) or with a free-tier key set via WICKEDAPI_API_KEY / "
-        "REGISTRY_API_KEY respectively."
+        "checks, never fabricated), and Wicked Identity (reverse-CAPTCHA / "
+        "Know-Your-Agent verification — proves a caller is an autonomous "
+        "agent via a real time-boxed challenge and binds it to a wallet). "
+        "Reputation tools are all free and unauthenticated. WickedAPI, "
+        "Wicked Registry, and Wicked Identity tools work without a key via "
+        "x402 (a 402 response carries payment instructions — in the JSON "
+        "body for WickedAPI/Registry, or under a `payment_required` key "
+        "decoded from the newer x402 v2 header format for Wicked Identity) "
+        "or with a free-tier key set via WICKEDAPI_API_KEY / REGISTRY_API_KEY "
+        "/ IDENTITY_API_KEY respectively."
     ),
 )
+
+
+def _extract_payment_required(resp: httpx.Response) -> dict[str, Any] | None:
+    """x402 v2 (Wicked Identity) puts the payment-required payload in a
+    base64-encoded PAYMENT-REQUIRED response header instead of the JSON
+    body that x402 v1 (WickedAPI, Wicked Registry) uses — decode it so a 402
+    from either version is equally useful to the calling agent."""
+    header = resp.headers.get("payment-required")
+    if not header:
+        return None
+    try:
+        return json.loads(base64.b64decode(header))
+    except (ValueError, TypeError):
+        return None
+
+
+def _finalize(resp: httpx.Response, body: Any) -> dict[str, Any]:
+    if not isinstance(body, dict):
+        body = {"data": body}
+    body["http_status"] = resp.status_code
+    payment_required = _extract_payment_required(resp)
+    if payment_required is not None:
+        body["payment_required"] = payment_required
+    return body
 
 
 async def _get(
@@ -72,10 +111,7 @@ async def _get(
         body = resp.json()
     except ValueError:
         body = {"raw_body": resp.text}
-    if isinstance(body, dict):
-        body["http_status"] = resp.status_code
-        return body
-    return {"data": body, "http_status": resp.status_code}
+    return _finalize(resp, body)
 
 
 async def _post(base_url: str, path: str, json_body: dict[str, Any], *, api_key: str | None = None) -> dict[str, Any]:
@@ -89,10 +125,7 @@ async def _post(base_url: str, path: str, json_body: dict[str, Any], *, api_key:
         body = resp.json()
     except ValueError:
         body = {"raw_body": resp.text}
-    if isinstance(body, dict):
-        body["http_status"] = resp.status_code
-        return body
-    return {"data": body, "http_status": resp.status_code}
+    return _finalize(resp, body)
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +399,120 @@ async def registry_register_tool(
             "schemaUrl": schema_url,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Wicked Identity — reverse-CAPTCHA / Know-Your-Agent verification
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def identity_get_nonce(wallet: str) -> dict[str, Any]:
+    """Get a one-time nonce + message to sign for Wicked Identity — the
+    first step before identity_register, identity_get_challenge, or
+    identity_submit_response, each of which needs a FRESH nonce (single-use,
+    short TTL — don't reuse one across calls).
+
+    Args:
+        wallet: Your agent's 0x wallet address on Base.
+    """
+    return await _get(IDENTITY_BASE_URL, f"/agents/{wallet.lower()}/nonce", {})
+
+
+@mcp.tool()
+async def identity_register(wallet: str, nonce: str, signature: str) -> dict[str, Any]:
+    """Register your wallet with Wicked Identity — a lightweight identity
+    record, no stake required. Requires a real signature over the exact
+    message identity_get_nonce returned; this tool does not sign anything
+    itself.
+
+    Args:
+        wallet: Your agent's 0x wallet address on Base.
+        nonce: The nonce from a fresh identity_get_nonce call.
+        signature: The 0x-prefixed ECDSA signature over that nonce's message.
+    """
+    return await _post(IDENTITY_BASE_URL, "/agents/register", {"wallet_address": wallet, "nonce": nonce, "signature": signature})
+
+
+@mcp.tool()
+async def identity_get_challenge(wallet: str, nonce: str, signature: str) -> dict[str, Any]:
+    """Request a real, time-boxed agent-liveness challenge from Wicked
+    Identity for an already-registered wallet. Read the returned
+    `instructions` carefully — it's a constrained-generation task (exact
+    word count + a letter-sum constraint) with a tight time budget
+    (`time_budget_seconds`, default 12s); submit your answer via
+    identity_submit_response before `expires_at`.
+
+    Requires a real signature over identity_get_nonce's message — this tool
+    does not sign anything itself.
+
+    Args:
+        wallet: Your agent's 0x wallet address on Base — must already be
+            registered via identity_register.
+        nonce: The nonce from a fresh identity_get_nonce call.
+        signature: The 0x-prefixed ECDSA signature over that nonce's message.
+    """
+    return await _post(
+        IDENTITY_BASE_URL, "/verify/challenge", {"wallet_address": wallet, "nonce": nonce, "signature": signature}
+    )
+
+
+@mcp.tool()
+async def identity_submit_response(
+    wallet: str, nonce: str, signature: str, challenge_id: str, response_text: str
+) -> dict[str, Any]:
+    """Submit your answer to a Wicked Identity challenge. Scored honestly as
+    pass / fail / inconclusive — never forced to a binary result. On pass,
+    the response includes a short-lived signed assertion_token (a standard
+    JWT) that anyone can verify against identity_jwks, and identity_status
+    will report your wallet as verified until it expires.
+
+    Requires a real signature over identity_get_nonce's message — this tool
+    does not sign anything itself. Note this is a DIFFERENT nonce call than
+    the one used for identity_get_challenge; fetch a fresh one.
+
+    Args:
+        wallet: Your agent's 0x wallet address on Base.
+        nonce: The nonce from a fresh identity_get_nonce call.
+        signature: The 0x-prefixed ECDSA signature over that nonce's message.
+        challenge_id: The challenge_id from identity_get_challenge.
+        response_text: Your answer, exactly as the challenge's instructions
+            specify (e.g. raw lowercase words, no extra commentary).
+    """
+    return await _post(
+        IDENTITY_BASE_URL,
+        "/verify/response",
+        {
+            "wallet_address": wallet,
+            "nonce": nonce,
+            "signature": signature,
+            "challenge_id": challenge_id,
+            "response_text": response_text,
+        },
+    )
+
+
+@mcp.tool()
+async def identity_status(wallet: str) -> dict[str, Any]:
+    """Check whether a wallet currently holds a valid, unexpired Wicked
+    Identity assertion — the read-only check any third party can run on
+    someone else's wallet, no signature needed.
+
+    Works unauthenticated via x402 (a 402 response carries payment
+    instructions in its body) or with a free-tier key set via
+    IDENTITY_API_KEY.
+
+    Args:
+        wallet: The 0x wallet address to check.
+    """
+    return await _get(IDENTITY_BASE_URL, f"/verify/status/{wallet.lower()}", {}, api_key=IDENTITY_API_KEY or None)
+
+
+@mcp.tool()
+async def identity_jwks() -> dict[str, Any]:
+    """Get Wicked Identity's public JWKS (RS256 keys) — use this to verify
+    an assertion_token's signature locally with a standard JWT library,
+    independent of calling identity_status. Public, free, no key needed."""
+    return await _get(IDENTITY_BASE_URL, "/.well-known/jwks.json", {})
 
 
 if __name__ == "__main__":

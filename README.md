@@ -2,12 +2,13 @@
 
 An MCP server wrapping the public HTTP surface of [WickedAPI](https://api.wickedapi.com)
 (trading data), [Wicked Reputation](https://stake.wickedapi.com) (on-chain
-agent staking/reputation), and [Wicked Registry](https://registry.wickedapi.com)
-(real reliability scores for x402/MCP tools) — 14 tools, no new backend
+agent staking/reputation), [Wicked Registry](https://registry.wickedapi.com)
+(real reliability scores for x402/MCP tools), and [Wicked Identity](https://verify.wickedapi.com)
+(reverse-CAPTCHA / Know-Your-Agent verification) — 20 tools, no new backend
 logic, just a protocol-native front door onto the same endpoints each
 service's own docs show calling with plain `requests`. Live at
-**`mcp.wickedapi.com`**; the reputation/staking and registry services and
-cookbooks live in separate (private) repos.
+**`mcp.wickedapi.com`**; the reputation/staking, registry, and identity
+services and cookbooks live in separate (private) repos.
 
 ## Tools
 
@@ -34,11 +35,25 @@ free-tier key — see below; featured/badge/report are always free)
   register a tool you own; you supply a real wallet signature, this tool
   doesn't sign anything itself
 
+**Wicked Identity** (register/challenge/response require a real wallet
+signature over a server-issued nonce — these tools never sign anything
+themselves; status is public and works unauthenticated via x402 or with a
+free-tier key)
+- `identity_get_nonce(wallet)` — fetch a fresh one-time nonce before every signed call below
+- `identity_register(wallet, nonce, signature)` — lightweight identity record, no stake required
+- `identity_get_challenge(wallet, nonce, signature)` — issue a real, time-boxed (12s default) agent-liveness challenge
+- `identity_submit_response(wallet, nonce, signature, challenge_id, response_text)` — score it; pass issues a signed assertion token
+- `identity_status(wallet)` — does this wallet hold a valid, unexpired assertion? always free
+- `identity_jwks()` — public RS256 keys to verify an assertion_token locally, always free
+
 Every tool returns the upstream JSON body plus an `http_status` field.
-Non-2xx responses are returned, not raised — a 402 from WickedAPI or Wicked
-Registry carries real x402 payment instructions in its body; a 404 from the
-reputation service just means the wallet has never registered. All of that
-is useful data for whatever's calling the tool, not failures to hide.
+Non-2xx responses are returned, not raised — a 402 from WickedAPI, Wicked
+Registry, or Wicked Identity carries real x402 payment instructions (in the
+JSON body for the first two; decoded from the `PAYMENT-REQUIRED` header
+into a `payment_required` key for Identity's newer x402 v2 protocol); a 404
+from the reputation service just means the wallet has never registered.
+All of that is useful data for whatever's calling the tool, not failures to
+hide.
 
 ## Run it locally (stdio — for Claude Desktop, `mcp dev`, etc.)
 
@@ -94,7 +109,9 @@ your own key — see above.
 |---|---|---|
 | `WICKEDAPI_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every WickedAPI call. |
 | `REGISTRY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every paid Wicked Registry call. |
+| `IDENTITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on the paid `identity_status` call. |
 | `WICKEDAPI_BASE_URL` | `https://api.wickedapi.com` | Override for local/staging testing only. |
 | `REPUTATION_BASE_URL` | `https://stake.wickedapi.com` | Override for local/staging testing only. |
 | `REGISTRY_BASE_URL` | `https://registry.wickedapi.com` | Override for local/staging testing only. |
+| `IDENTITY_BASE_URL` | `https://verify.wickedapi.com` | Override for local/staging testing only. |
 | `RATE_LIMIT_PER_MINUTE` | `30` | HTTP deployment only (`http_app.py`), per client IP. |
