@@ -47,12 +47,13 @@ free-tier key)
 - `identity_jwks()` — public RS256 keys to verify an assertion_token locally, always free
 
 Every tool returns the upstream JSON body plus an `http_status` field.
-Non-2xx responses are returned, not raised — a 402 from WickedAPI, Wicked
-Registry, or Wicked Identity carries real x402 payment instructions (in the
-JSON body for the first two; decoded from the `PAYMENT-REQUIRED` header
-into a `payment_required` key for Identity's newer x402 v2 protocol); a 404
-from the reputation service just means the wallet has never registered.
-All of that is useful data for whatever's calling the tool, not failures to
+Non-2xx responses are returned, not raised — a 402 from WickedAPI carries
+real x402 payment instructions in the JSON body (older x402 v1); a 402 from
+Wicked Registry's search/detail tools or Wicked Identity's status tool
+carries them decoded from the `PAYMENT-REQUIRED` header into a
+`payment_required` key instead (newer x402 v2); a 404 from the reputation
+service just means the wallet has never registered. All of that is useful
+data for whatever's calling the tool, not failures to
 hide.
 
 ## Run it locally (stdio — for Claude Desktop, `mcp dev`, etc.)

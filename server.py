@@ -18,9 +18,13 @@ a private key.
 
 Every tool returns the upstream JSON body as-is, plus an `http_status`
 field. Non-2xx responses are NOT raised as exceptions — a 402 from
-WickedAPI carries the x402 payment instructions in its body, and a 404 from
-the reputation service just means "this wallet has never registered" —
-both are meaningful data for the calling agent, not failures to hide.
+WickedAPI carries the x402 payment instructions in its body (older x402
+v1), a 402 from Wicked Registry's search/detail tools or Wicked Identity's
+status tool carries them in a `payment_required` key decoded from the
+response's PAYMENT-REQUIRED header instead (newer x402 v2, see
+_extract_payment_required below), and a 404 from the reputation service
+just means "this wallet has never registered" — all of that is meaningful
+data for the calling agent, not failures to hide.
 
 Run locally (stdio, for Claude Desktop / `mcp dev`):
     python server.py
@@ -56,13 +60,16 @@ mcp = MCPServer(
         "checks, never fabricated), and Wicked Identity (reverse-CAPTCHA / "
         "Know-Your-Agent verification — proves a caller is an autonomous "
         "agent via a real time-boxed challenge and binds it to a wallet). "
-        "Reputation tools are all free and unauthenticated. WickedAPI, "
-        "Wicked Registry, and Wicked Identity tools work without a key via "
-        "x402 (a 402 response carries payment instructions — in the JSON "
-        "body for WickedAPI/Registry, or under a `payment_required` key "
-        "decoded from the newer x402 v2 header format for Wicked Identity) "
-        "or with a free-tier key set via WICKEDAPI_API_KEY / REGISTRY_API_KEY "
-        "/ IDENTITY_API_KEY respectively."
+        "Reputation tools are all free and unauthenticated (as are Wicked "
+        "Registry's featured/badge/report/register tools and Wicked "
+        "Identity's register/challenge/response/jwks tools). WickedAPI's "
+        "paid tools, Wicked Registry's search/detail tools, and Wicked "
+        "Identity's status tool work without a key via x402 (a 402 response "
+        "carries payment instructions — in the JSON body for WickedAPI's "
+        "older x402 v1, or under a `payment_required` key decoded from the "
+        "newer x402 v2 PAYMENT-REQUIRED header for Wicked Registry and "
+        "Wicked Identity) or with a free-tier key set via WICKEDAPI_API_KEY "
+        "/ REGISTRY_API_KEY / IDENTITY_API_KEY respectively."
     ),
 )
 
