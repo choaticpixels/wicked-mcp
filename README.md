@@ -132,4 +132,5 @@ your own key — see above.
 | `REGISTRY_BASE_URL` | `https://registry.wickedapi.com` | Override for local/staging testing only. |
 | `IDENTITY_BASE_URL` | `https://verify.wickedapi.com` | Override for local/staging testing only. |
 | `SANITY_BASE_URL` | `https://sanity.wickedapi.com` | Override for local/staging testing only (staging: `https://wicked-sanity-staging.up.railway.app`). |
-| `RATE_LIMIT_PER_MINUTE` | `30` | HTTP deployment only (`http_app.py`), per client IP. |
+| `RATE_LIMIT_PER_MINUTE` | `30` | HTTP deployment only (`http_app.py`), per real client IP (IPv6 grouped by /64). |
+| `TRUSTED_CLIENT_IP_HEADER` | `x-real-ip` | HTTP deployment only. Header carrying the caller's real IP, set by the proxy in front (Railway sets `X-Real-IP`). Behind the proxy the TCP peer is always Railway's own address, so without this every caller would share one bucket. Only safe when the proxy sets the header itself; set empty to use the TCP peer instead (e.g. if run without a proxy). If the domain is ever proxied through Cloudflare, point it at `cf-connecting-ip`. Missing/invalid values fall back to the TCP peer. |
