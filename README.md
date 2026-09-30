@@ -3,12 +3,13 @@
 An MCP server wrapping the public HTTP surface of [WickedAPI](https://api.wickedapi.com)
 (trading data), [Wicked Reputation](https://stake.wickedapi.com) (on-chain
 agent staking/reputation), [Wicked Registry](https://registry.wickedapi.com)
-(real reliability scores for x402/MCP tools), and [Wicked Identity](https://verify.wickedapi.com)
-(reverse-CAPTCHA / Know-Your-Agent verification) — 20 tools, no new backend
+(real reliability scores for x402/MCP tools), [Wicked Identity](https://verify.wickedapi.com)
+(reverse-CAPTCHA / Know-Your-Agent verification), and [Wicked Sanity](https://sanity.wickedapi.com)
+(hallucination / eval check) — 22 tools, no new backend
 logic, just a protocol-native front door onto the same endpoints each
 service's own docs show calling with plain `requests`. Live at
-**`mcp.wickedapi.com`**; the reputation/staking, registry, and identity
-services and cookbooks live in separate (private) repos.
+**`mcp.wickedapi.com`**; the reputation/staking, registry, identity, and
+sanity services and cookbooks live in separate (private) repos.
 
 ## Tools
 
@@ -46,11 +47,25 @@ free-tier key)
 - `identity_status(wallet)` — does this wallet hold a valid, unexpired assertion? always free
 - `identity_jwks()` — public RS256 keys to verify an assertion_token locally, always free
 
+**Wicked Sanity** (hallucination / eval check — works unauthenticated via
+x402, or with a free-tier key; every verdict is real model inference run at
+request time, never cached or guessed)
+- `sanity_check(claim, context?, mode?)` — verify one claim. `mode: "grounded"`
+  (default; `context` required) checks it against source text you supply;
+  `mode: "open"` checks it against live web evidence. Open mode is
+  consistency with current web content, **not objective truth**, and returns
+  `insufficient_evidence` when nothing relevant is found. Note
+  `confidence_score` is the raw consistency score (a `contradicted` verdict
+  scores near 0), not confidence-in-the-verdict
+- `sanity_check_batch(claims, context?, mode?)` — up to 50 claims against one
+  shared context in a single call; use it for a multi-sentence output rather
+  than one `sanity_check` per sentence
+
 Every tool returns the upstream JSON body plus an `http_status` field.
 Non-2xx responses are returned, not raised — a 402 from WickedAPI carries
 real x402 payment instructions in the JSON body (older x402 v1); a 402 from
-Wicked Registry's search/detail tools or Wicked Identity's status tool
-carries them decoded from the `PAYMENT-REQUIRED` header into a
+Wicked Registry's search/detail tools, Wicked Identity's status tool, or
+Wicked Sanity's check tools carries them decoded from the `PAYMENT-REQUIRED` header into a
 `payment_required` key instead (newer x402 v2); a 404 from the reputation
 service just means the wallet has never registered. All of that is useful
 data for whatever's calling the tool, not failures to
@@ -111,8 +126,10 @@ your own key — see above.
 | `WICKEDAPI_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every WickedAPI call. |
 | `REGISTRY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every paid Wicked Registry call. |
 | `IDENTITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on the paid `identity_status` call. |
+| `SANITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on `sanity_check` / `sanity_check_batch`. Deliberately not set on the public deployment: every caller shares one key, so they would share its rate limit and spend its web-search (open-mode) credits. |
 | `WICKEDAPI_BASE_URL` | `https://api.wickedapi.com` | Override for local/staging testing only. |
 | `REPUTATION_BASE_URL` | `https://stake.wickedapi.com` | Override for local/staging testing only. |
 | `REGISTRY_BASE_URL` | `https://registry.wickedapi.com` | Override for local/staging testing only. |
 | `IDENTITY_BASE_URL` | `https://verify.wickedapi.com` | Override for local/staging testing only. |
+| `SANITY_BASE_URL` | `https://sanity.wickedapi.com` | Override for local/staging testing only (staging: `https://wicked-sanity-staging.up.railway.app`). |
 | `RATE_LIMIT_PER_MINUTE` | `30` | HTTP deployment only (`http_app.py`), per client IP. |

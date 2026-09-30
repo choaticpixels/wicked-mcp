@@ -1,13 +1,14 @@
 """
-WickedAPI + Wicked Reputation + Wicked Registry + Wicked Identity MCP server.
+WickedAPI + Wicked Reputation + Wicked Registry + Wicked Identity + Wicked Sanity
+MCP server.
 
-Wraps the public HTTP surface of all four live services as MCP tools — no
+Wraps the public HTTP surface of all five live services as MCP tools — no
 new backend logic, no secrets required for the reputation side (every
 endpoint it calls is public/unauthenticated by design, see
 stake.wickedapi.com's /transparency). WickedAPI's, Wicked Registry's, and
 Wicked Identity's paid endpoints work unauthenticated too, falling back to
 x402 pay-per-call; set WICKEDAPI_API_KEY / REGISTRY_API_KEY / IDENTITY_API_KEY
-for free-tier header auth instead (see https://api.wickedapi.com and the
+/ SANITY_API_KEY for free-tier header auth instead (see https://api.wickedapi.com and the
 cookbooks/ in this repo for the same pattern applied to
 LangChain/CrewAI/LlamaIndex/ElizaOS).
 
@@ -46,9 +47,11 @@ WICKEDAPI_BASE_URL = os.environ.get("WICKEDAPI_BASE_URL", "https://api.wickedapi
 REPUTATION_BASE_URL = os.environ.get("REPUTATION_BASE_URL", "https://stake.wickedapi.com")
 REGISTRY_BASE_URL = os.environ.get("REGISTRY_BASE_URL", "https://registry.wickedapi.com")
 IDENTITY_BASE_URL = os.environ.get("IDENTITY_BASE_URL", "https://verify.wickedapi.com")
+SANITY_BASE_URL = os.environ.get("SANITY_BASE_URL", "https://sanity.wickedapi.com")
 WICKEDAPI_API_KEY = os.environ.get("WICKEDAPI_API_KEY", "")
 REGISTRY_API_KEY = os.environ.get("REGISTRY_API_KEY", "")
 IDENTITY_API_KEY = os.environ.get("IDENTITY_API_KEY", "")
+SANITY_API_KEY = os.environ.get("SANITY_API_KEY", "")
 
 mcp = MCPServer(
     "wicked-reputation",
@@ -59,7 +62,10 @@ mcp = MCPServer(
         "tools — uptime, latency, schema conformance, from real synthetic "
         "checks, never fabricated), and Wicked Identity (reverse-CAPTCHA / "
         "Know-Your-Agent verification — proves a caller is an autonomous "
-        "agent via a real time-boxed challenge and binds it to a wallet). "
+        "agent via a real time-boxed challenge and binds it to a wallet), and "
+        "Wicked Sanity (hallucination / eval check — verifies a claim against "
+        "context you supply, or against live web evidence, before you act on "
+        "it). "
         "Reputation tools are all free and unauthenticated (as are Wicked "
         "Registry's featured/badge/report/register tools and Wicked "
         "Identity's register/challenge/response/jwks tools). WickedAPI's "
@@ -69,7 +75,10 @@ mcp = MCPServer(
         "older x402 v1, or under a `payment_required` key decoded from the "
         "newer x402 v2 PAYMENT-REQUIRED header for Wicked Registry and "
         "Wicked Identity) or with a free-tier key set via WICKEDAPI_API_KEY "
-        "/ REGISTRY_API_KEY / IDENTITY_API_KEY respectively."
+        "/ REGISTRY_API_KEY / IDENTITY_API_KEY respectively. Wicked "
+        "Sanity's sanity_check / sanity_check_batch tools work the same way "
+        "(x402 v2 payment instructions under `payment_required`, or a "
+        "free-tier key via SANITY_API_KEY)."
     ),
 )
 
@@ -121,12 +130,19 @@ async def _get(
     return _finalize(resp, body)
 
 
-async def _post(base_url: str, path: str, json_body: dict[str, Any], *, api_key: str | None = None) -> dict[str, Any]:
+async def _post(
+    base_url: str,
+    path: str,
+    json_body: dict[str, Any],
+    *,
+    api_key: str | None = None,
+    timeout: float = 20.0,
+) -> dict[str, Any]:
     headers = {}
     if api_key:
         headers["x-api-key"] = api_key
     json_body = {k: v for k, v in json_body.items() if v is not None}
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{base_url}{path}", json=json_body, headers=headers)
     try:
         body = resp.json()
@@ -520,6 +536,101 @@ async def identity_jwks() -> dict[str, Any]:
     an assertion_token's signature locally with a standard JWT library,
     independent of calling identity_status. Public, free, no key needed."""
     return await _get(IDENTITY_BASE_URL, "/.well-known/jwks.json", {})
+
+
+# ---------------------------------------------------------------------------
+# Wicked Sanity — hallucination / eval check
+# ---------------------------------------------------------------------------
+
+# Open mode runs a live web search (and batches run one per claim), so these
+# calls can legitimately take longer than the 20s used by the other tools.
+_SANITY_TIMEOUT = 90.0
+
+
+@mcp.tool()
+async def sanity_check(claim: str, context: str | list[str] | None = None, mode: str = "grounded") -> dict[str, Any]:
+    """Verify a claim before you act on it or hand it downstream. Every
+    verdict comes from a real model inference run at request time (HHEM
+    entailment) — never cached or guessed.
+
+    Two modes:
+      - "grounded" (default): is the claim faithful to the `context` you
+        supply? `context` is REQUIRED. This is a scoreable question.
+      - "open": is the claim consistent with live web evidence found right
+        now (real Tavily search, then the same model)? `context` is ignored.
+        This is consistency with current web content, NOT objective truth —
+        a claim can be well-supported by the web and still be wrong.
+
+    Reading the result (in `data`):
+      - `verdict`: "supported" (consistent with the source), "contradicted"
+        (clearly inconsistent), "unsupported" (not supported but not clearly
+        contradicted — treat as unverified), or "insufficient_evidence"
+        (open mode found nothing usable; says nothing about whether the
+        claim is true).
+      - `confidence_score`: the raw consistency score in [0, 1] — near 1 =
+        consistent with the source, near 0 = inconsistent. It is NOT
+        confidence-in-the-verdict: a "contradicted" verdict has a score near
+        0. It is 0.0 for "insufficient_evidence".
+      - `evidence`: the audit trail (context snippet, or web citations).
+    Suggested policy: act on "supported"; treat "unsupported" and
+    "insufficient_evidence" as unverified; reject or regenerate on
+    "contradicted".
+
+    Works unauthenticated via x402 (an http_status 402 carries payment
+    instructions under `payment_required`) or free with a key set via
+    SANITY_API_KEY.
+
+    Args:
+        claim: The single statement to verify (max 5,000 characters).
+        context: Source text the claim must be faithful to — a string or a
+            list of strings. Required for mode "grounded".
+        mode: "grounded" (check against `context`) or "open" (check against
+            live web evidence).
+    """
+    return await _post(
+        SANITY_BASE_URL,
+        "/check",
+        {"claim": claim, "context": context, "mode": mode},
+        api_key=SANITY_API_KEY or None,
+        timeout=_SANITY_TIMEOUT,
+    )
+
+
+@mcp.tool()
+async def sanity_check_batch(
+    claims: list[str], context: str | list[str] | None = None, mode: str = "grounded"
+) -> dict[str, Any]:
+    """Verify several claims in one call — use this for a multi-sentence
+    output instead of calling sanity_check once per sentence. Split the
+    output into individual claims, pass the source as `context`, and every
+    claim is checked against it. One payment / one rate-limit hit covers the
+    whole batch, and grounded batches are scored far faster than N separate
+    calls.
+
+    Returns `data` as a list with one result per claim, in the same order
+    as `claims`; each result is shaped exactly like sanity_check's (see
+    that tool for how to read `verdict`, `confidence_score` and `evidence`).
+    In "open" mode a separate live web search runs per claim, so large open
+    batches are slow.
+
+    Works unauthenticated via x402 (an http_status 402 carries payment
+    instructions under `payment_required`) or free with a key set via
+    SANITY_API_KEY.
+
+    Args:
+        claims: 1-50 statements to verify, each up to 5,000 characters.
+        context: Shared source text for every claim — a string or a list of
+            strings. Required for mode "grounded".
+        mode: "grounded" (check against `context`) or "open" (check against
+            live web evidence).
+    """
+    return await _post(
+        SANITY_BASE_URL,
+        "/check/batch",
+        {"claims": claims, "context": context, "mode": mode},
+        api_key=SANITY_API_KEY or None,
+        timeout=_SANITY_TIMEOUT,
+    )
 
 
 if __name__ == "__main__":
