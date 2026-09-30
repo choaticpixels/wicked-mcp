@@ -126,7 +126,7 @@ your own key — see above.
 | `WICKEDAPI_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every WickedAPI call. |
 | `REGISTRY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every paid Wicked Registry call. |
 | `IDENTITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on the paid `identity_status` call. |
-| `SANITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on `sanity_check` / `sanity_check_batch`. Deliberately not set on the public deployment: every caller shares one key, so they would share its rate limit and spend its web-search (open-mode) credits. |
+| `SANITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on `sanity_check` / `sanity_check_batch`. **Set on the public deployment** to a dedicated *restricted* key, so public callers get real verdicts: Sanity enforces its limits (20 requests/minute and 30 open-mode checks/day, shared by all users; grounded mode is not counted against the daily cap) via its `API_KEY_LIMITS` setting, because every caller shares that one key and open mode spends a live web search per call. Over the limit, the tool returns `http_status` 429 with `Retry-After`. |
 | `WICKEDAPI_BASE_URL` | `https://api.wickedapi.com` | Override for local/staging testing only. |
 | `REPUTATION_BASE_URL` | `https://stake.wickedapi.com` | Override for local/staging testing only. |
 | `REGISTRY_BASE_URL` | `https://registry.wickedapi.com` | Override for local/staging testing only. |

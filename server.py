@@ -576,9 +576,15 @@ async def sanity_check(claim: str, context: str | list[str] | None = None, mode:
     "insufficient_evidence" as unverified; reject or regenerate on
     "contradicted".
 
-    Works unauthenticated via x402 (an http_status 402 carries payment
-    instructions under `payment_required`) or free with a key set via
-    SANITY_API_KEY.
+    Access: the public mcp.wickedapi.com server uses a shared, rate-limited
+    key, so this returns real verdicts directly -- but the shared budget is
+    small (about 20 requests/minute and 30 open-mode checks/day across ALL
+    users; grounded mode is not counted against the daily limit). An
+    http_status 429 means that shared budget is used up: retry after the
+    Retry-After seconds, run this server locally with your own
+    SANITY_API_KEY, or pay per call via x402 directly. A server with no key
+    configured returns an http_status 402 carrying x402 payment instructions
+    under `payment_required` instead.
 
     Args:
         claim: The single statement to verify (max 5,000 characters).
@@ -613,9 +619,15 @@ async def sanity_check_batch(
     In "open" mode a separate live web search runs per claim, so large open
     batches are slow.
 
-    Works unauthenticated via x402 (an http_status 402 carries payment
-    instructions under `payment_required`) or free with a key set via
-    SANITY_API_KEY.
+    Access: the public mcp.wickedapi.com server uses a shared, rate-limited
+    key, so this returns real verdicts directly -- but the shared budget is
+    small (about 20 requests/minute and 30 open-mode checks/day across ALL
+    users; grounded mode is not counted against the daily limit). An
+    http_status 429 means that shared budget is used up: retry after the
+    Retry-After seconds, run this server locally with your own
+    SANITY_API_KEY, or pay per call via x402 directly. A server with no key
+    configured returns an http_status 402 carrying x402 payment instructions
+    under `payment_required` instead.
 
     Args:
         claims: 1-50 statements to verify, each up to 5,000 characters.
