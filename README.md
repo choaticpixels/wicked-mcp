@@ -4,8 +4,9 @@ An MCP server wrapping the public HTTP surface of [WickedAPI](https://api.wicked
 (trading data), [Wicked Reputation](https://stake.wickedapi.com) (on-chain
 agent staking/reputation), [Wicked Registry](https://registry.wickedapi.com)
 (real reliability scores for x402/MCP tools), [Wicked Identity](https://verify.wickedapi.com)
-(reverse-CAPTCHA / Know-Your-Agent verification), and [Wicked Sanity](https://sanity.wickedapi.com)
-(hallucination / eval check) — 22 tools, no new backend
+(reverse-CAPTCHA / Know-Your-Agent verification), [Wicked Sanity](https://sanity.wickedapi.com)
+(hallucination / eval check), and [Wicked Memory](https://memory.wickedapi.com)
+(persistent, wallet-scoped agent memory) — 30 tools, no new backend
 logic, just a protocol-native front door onto the same endpoints each
 service's own docs show calling with plain `requests`. Live at
 **`mcp.wickedapi.com`**; the reputation/staking, registry, identity, and
@@ -60,6 +61,29 @@ request time, never cached or guessed)
 - `sanity_check_batch(claims, context?, mode?)` — up to 50 claims against one
   shared context in a single call; use it for a multi-sentence output rather
   than one `sanity_check` per sentence
+
+**Wicked Memory** (persistent, wallet-scoped agent memory: store, semantic
+search, versioned history, hard delete — only search is metered)
+
+Every memory call needs a fresh per-request wallet signature. Like the Identity
+tools, this server never signs anything or holds a key: call `memory_prepare`
+with the operation and its arguments, sign the `message_to_sign` it returns
+(EIP-191 `personal_sign`) with your own wallet, then call the matching tool
+with the **same arguments** plus the returned `timestamp`, `nonce` and your
+`signature`. The nonce is single-use and the timestamp must be within 5
+minutes, so prepare again for every call.
+- `memory_prepare(operation, wallet, params?)` — step 1 of every call; returns the message to sign
+- `memory_store(wallet, content, …)` — store a memory (free); a real embedding is computed at write time
+- `memory_search(wallet, q, …)` — semantic search over **your** memories only, ranked by real cosine
+  similarity. The one metered call: free with `MEMORY_API_KEY`, otherwise a `402` with x402 v2 payment
+  instructions under `payment_required` (0.001 USDC on Base); pay, then call again with the same
+  arguments plus `payment_signature` (a 402 does not consume the nonce). Supports `tags`, time filters,
+  `as_of` (memory as it stood at a past instant) and `include_superseded`
+- `memory_get`, `memory_history`, `memory_deletions` — read one memory, its full version chain, or your deletion audit log
+- `memory_update(wallet, memory_id, …)` — supersedes: creates a new version and closes the old one
+  (`valid_until` / `superseded_by`); nothing is overwritten
+- `memory_delete(wallet, memory_id, scope?, reason?)` — permanent hard delete; `scope: "chain"` (default)
+  removes every version, `"version"` just one. Only an audit row (no content) is kept
 
 Every tool returns the upstream JSON body plus an `http_status` field.
 Non-2xx responses are returned, not raised — a 402 from WickedAPI carries
@@ -127,6 +151,8 @@ your own key — see above.
 | `REGISTRY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every paid Wicked Registry call. |
 | `IDENTITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on the paid `identity_status` call. |
 | `SANITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on `sanity_check` / `sanity_check_batch`. **Set on the public deployment** to a dedicated *restricted* key, so public callers get real verdicts: Sanity enforces its limits (20 requests/minute and 30 open-mode checks/day, shared by all users; grounded mode is not counted against the daily cap) via its `API_KEY_LIMITS` setting, because every caller shares that one key and open mode spends a live web search per call. Over the limit, the tool returns `http_status` 429 with `Retry-After`. |
+| `MEMORY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on `memory_search` (the only metered Memory call). Memory keys are issued by the operator. |
+| `MEMORY_BASE_URL` | `https://memory.wickedapi.com` | Override for local/staging testing only (staging: `https://memory-testnet.wickedapi.com`, Base Sepolia). |
 | `WICKEDAPI_BASE_URL` | `https://api.wickedapi.com` | Override for local/staging testing only. |
 | `REPUTATION_BASE_URL` | `https://stake.wickedapi.com` | Override for local/staging testing only. |
 | `REGISTRY_BASE_URL` | `https://registry.wickedapi.com` | Override for local/staging testing only. |

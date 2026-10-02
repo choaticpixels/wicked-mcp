@@ -36,9 +36,14 @@ Run as a remote server (streamable HTTP, for deployment):
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
+import secrets
+import time
+import uuid
 from typing import Any
+from urllib.parse import quote, urlencode
 
 import httpx
 from mcp.server.mcpserver import MCPServer
@@ -48,6 +53,8 @@ REPUTATION_BASE_URL = os.environ.get("REPUTATION_BASE_URL", "https://stake.wicke
 REGISTRY_BASE_URL = os.environ.get("REGISTRY_BASE_URL", "https://registry.wickedapi.com")
 IDENTITY_BASE_URL = os.environ.get("IDENTITY_BASE_URL", "https://verify.wickedapi.com")
 SANITY_BASE_URL = os.environ.get("SANITY_BASE_URL", "https://sanity.wickedapi.com")
+MEMORY_BASE_URL = os.environ.get("MEMORY_BASE_URL", "https://memory.wickedapi.com")
+MEMORY_API_KEY = os.environ.get("MEMORY_API_KEY", "")
 WICKEDAPI_API_KEY = os.environ.get("WICKEDAPI_API_KEY", "")
 REGISTRY_API_KEY = os.environ.get("REGISTRY_API_KEY", "")
 IDENTITY_API_KEY = os.environ.get("IDENTITY_API_KEY", "")
@@ -78,7 +85,14 @@ mcp = MCPServer(
         "/ REGISTRY_API_KEY / IDENTITY_API_KEY respectively. Wicked "
         "Sanity's sanity_check / sanity_check_batch tools work the same way "
         "(x402 v2 payment instructions under `payment_required`, or a "
-        "free-tier key via SANITY_API_KEY)."
+        "free-tier key via SANITY_API_KEY). Wicked Memory is persistent, "
+        "wallet-scoped agent memory (store, semantic search, versioned "
+        "history, hard delete): every memory_* call needs a fresh wallet "
+        "signature, so call memory_prepare first, sign the message it "
+        "returns with your own wallet, then call the memory_* tool — this "
+        "server never signs or holds a key. memory_search is the metered "
+        "call (x402 v2 under `payment_required`, or a free-tier key via "
+        "MEMORY_API_KEY)."
     ),
 )
 
@@ -643,6 +657,376 @@ async def sanity_check_batch(
         api_key=SANITY_API_KEY or None,
         timeout=_SANITY_TIMEOUT,
     )
+
+
+# ---------------------------------------------------------------------------
+# Wicked Memory — portable, wallet-scoped agent memory
+# ---------------------------------------------------------------------------
+#
+# Every /memories* call carries a per-request wallet signature (EIP-191
+# personal_sign) over a message binding the wallet to that exact method, path,
+# body, timestamp and nonce. Like the Identity tools above, this server never
+# signs anything or holds a key: call memory_prepare, sign the message it
+# returns with your own wallet, then call the memory_* tool with the
+# timestamp/nonce/signature. The tool rebuilds the identical request, so pass
+# exactly the same arguments to both calls.
+
+_MEMORY_OPS = {"store", "search", "get", "update", "history", "delete", "deletions"}
+_EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
+
+
+def _memory_clean(params: dict[str, Any] | None) -> dict[str, Any]:
+    return {k: v for k, v in (params or {}).items() if v is not None}
+
+
+def _memory_id(params: dict[str, Any]) -> str:
+    try:
+        return str(uuid.UUID(str(params.get("memory_id"))))
+    except ValueError:
+        raise ValueError("memory_id must be a UUID") from None
+
+
+def _memory_build(operation: str, params: dict[str, Any] | None) -> tuple[str, str, bytes | None]:
+    """Deterministically build (method, path-with-query, raw body bytes) for an
+    operation. The path and body bytes are exactly what gets signed and sent."""
+    p = _memory_clean(params)
+    if operation not in _MEMORY_OPS:
+        raise ValueError(f"unknown operation {operation!r}; expected one of {sorted(_MEMORY_OPS)}")
+
+    def body(keys: tuple[str, ...]) -> bytes:
+        return json.dumps({k: p[k] for k in keys if k in p}, separators=(",", ":"), ensure_ascii=False).encode()
+
+    if operation == "store":
+        if "content" not in p:
+            raise ValueError("store requires content")
+        return "POST", "/memories", body(("content", "tags", "metadata", "source"))
+    if operation == "search":
+        if "q" not in p:
+            raise ValueError("search requires q")
+        q: dict[str, Any] = {"q": p["q"]}
+        for key in ("limit", "created_after", "created_before", "as_of"):
+            if key in p:
+                q[key] = p[key]
+        if "tags" in p:
+            q["tags"] = ",".join(p["tags"]) if isinstance(p["tags"], list) else p["tags"]
+        if "include_superseded" in p:
+            q["include_superseded"] = "true" if p["include_superseded"] else "false"
+        return "GET", "/memories/search?" + urlencode(q, quote_via=quote), None
+    if operation == "get":
+        return "GET", f"/memories/{_memory_id(p)}", None
+    if operation == "update":
+        return "PATCH", f"/memories/{_memory_id(p)}", body(("content", "tags", "metadata", "source"))
+    if operation == "history":
+        return "GET", f"/memories/{_memory_id(p)}/history", None
+    if operation == "delete":
+        # scope is always explicit so memory_prepare (which may omit it) and memory_delete (whose
+        # default is "chain") sign and send the identical path.
+        q = {"scope": p.get("scope", "chain")}
+        if "reason" in p:
+            q["reason"] = p["reason"]
+        return "DELETE", f"/memories/{_memory_id(p)}?" + urlencode(q, quote_via=quote), None
+    return "GET", "/memory-deletions", None
+
+
+def _memory_message(wallet: str, method: str, path: str, timestamp: str, nonce: str, raw_body: bytes | None) -> str:
+    sha = hashlib.sha256(raw_body).hexdigest() if raw_body else _EMPTY_SHA256
+    return "\n".join(
+        [
+            "Wicked Memory auth",
+            f"wallet: {wallet.lower()}",
+            f"method: {method.upper()}",
+            f"path: {path}",
+            f"timestamp: {timestamp}",
+            f"nonce: {nonce}",
+            f"body-sha256: {sha}",
+        ]
+    )
+
+
+@mcp.tool()
+async def memory_prepare(operation: str, wallet: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Step 1 of every Wicked Memory call: get the exact message to sign.
+    Wicked Memory is persistent, wallet-scoped memory for agents (store,
+    semantic search, versioned history, hard delete). Each call needs a fresh
+    wallet signature; this server never signs or holds a key.
+
+    Sign `message_to_sign` with your wallet (EIP-191 personal_sign), then
+    call the matching tool (memory_store, memory_search, ...) with the SAME
+    arguments plus the returned `timestamp`, `nonce` and your `signature`.
+    The timestamp must be within 5 minutes and the nonce is single-use, so
+    prepare again for every call.
+
+    Args:
+        operation: One of "store", "search", "get", "update", "history",
+            "delete", "deletions".
+        wallet: Your agent's 0x wallet address (your memories are scoped to it).
+        params: The same arguments you will pass to the tool, by name, e.g.
+            {"content": "...", "tags": ["a"]} for store, {"q": "..."} for
+            search, {"memory_id": "<uuid>"} for get/update/history/delete.
+    """
+    try:
+        method, path, raw = _memory_build(operation, params)
+    except ValueError as exc:
+        return {"error": str(exc), "source": "mcp", "http_status": 400}
+    timestamp = str(int(time.time()))
+    nonce = secrets.token_hex(16)
+    return {
+        "message_to_sign": _memory_message(wallet, method, path, timestamp, nonce, raw),
+        "timestamp": timestamp,
+        "nonce": nonce,
+        "operation": operation,
+        "wallet": wallet,
+        "request": {"method": method, "path": path},
+        "next": f"Sign message_to_sign with the wallet's key (EIP-191 personal_sign), then call memory_{operation} with the same arguments plus timestamp, nonce and signature.",
+    }
+
+
+async def _memory_call(
+    operation: str,
+    wallet: str,
+    params: dict[str, Any],
+    timestamp: str,
+    nonce: str,
+    signature: str,
+    *,
+    payment_signature: str | None = None,
+) -> dict[str, Any]:
+    try:
+        method, path, raw = _memory_build(operation, params)
+    except ValueError as exc:
+        return {"error": str(exc), "source": "mcp", "http_status": 400}
+    headers = {
+        "x-wallet-address": wallet,
+        "x-wallet-timestamp": timestamp,
+        "x-wallet-nonce": nonce,
+        "x-wallet-signature": signature,
+    }
+    if raw is not None:
+        headers["content-type"] = "application/json"
+    if operation == "search":
+        if MEMORY_API_KEY:
+            headers["x-api-key"] = MEMORY_API_KEY
+        if payment_signature:
+            headers["PAYMENT-SIGNATURE"] = payment_signature
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.request(method, f"{MEMORY_BASE_URL}{path}", content=raw, headers=headers)
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {"raw_body": resp.text}
+    return _finalize(resp, body)
+
+
+@mcp.tool()
+async def memory_store(
+    wallet: str,
+    content: str,
+    timestamp: str,
+    nonce: str,
+    signature: str,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Store a memory in Wicked Memory (free; fair-use rate limited). Call
+    memory_prepare with operation "store" and these same arguments first, sign
+    its message, then pass timestamp/nonce/signature here. A real embedding is
+    computed at write time. Returns the stored memory (`data.id`, validity
+    window, ...).
+
+    Args:
+        wallet: Your agent's 0x wallet address (scopes the memory).
+        content: The text to remember (max 16 KB).
+        timestamp: From memory_prepare.
+        nonce: From memory_prepare (single use).
+        signature: Your wallet's signature over memory_prepare's message_to_sign.
+        tags: Up to 20 short tags for filtering.
+        metadata: Free-form JSON object (max 8 KB).
+        source: Which agent/session wrote this.
+    """
+    return await _memory_call(
+        "store", wallet, {"content": content, "tags": tags, "metadata": metadata, "source": source}, timestamp, nonce, signature
+    )
+
+
+@mcp.tool()
+async def memory_search(
+    wallet: str,
+    q: str,
+    timestamp: str,
+    nonce: str,
+    signature: str,
+    limit: int | None = None,
+    tags: list[str] | None = None,
+    created_after: str | None = None,
+    created_before: str | None = None,
+    as_of: str | None = None,
+    include_superseded: bool | None = None,
+    payment_signature: str | None = None,
+) -> dict[str, Any]:
+    """Semantic search over YOUR memories (scoped to `wallet`; no other
+    wallet's memories are ever returned). Ranked by real cosine similarity
+    computed at query time (`score`). Call memory_prepare with operation
+    "search" and these same arguments first.
+
+    Access: this is the one metered endpoint. With a free-tier key
+    (MEMORY_API_KEY, if this server has one) it is free and rate-limited;
+    otherwise it returns http_status 402 with x402 payment instructions under
+    `payment_required` (0.001 USDC on Base). To pay: build and sign the x402
+    payment from `payment_required`, then call this tool AGAIN with the SAME
+    arguments (same timestamp/nonce/signature, which a 402 does not consume)
+    plus `payment_signature`.
+
+    By default only currently-active versions are searched; use `as_of` to
+    search memory as it stood at a past instant, or include_superseded=true
+    for every version.
+
+    Args:
+        wallet: Your agent's 0x wallet address.
+        q: What to look for, in natural language.
+        timestamp: From memory_prepare.
+        nonce: From memory_prepare (single use).
+        signature: Your wallet's signature over memory_prepare's message_to_sign.
+        limit: 1-50 results (default 10).
+        tags: Only memories having ALL of these tags.
+        created_after: ISO-8601 lower bound on creation time.
+        created_before: ISO-8601 upper bound on creation time.
+        as_of: ISO-8601 instant; search the versions valid at that moment.
+        include_superseded: Also search old, superseded versions.
+        payment_signature: x402 payment payload (base64) for the keyless path.
+    """
+    return await _memory_call(
+        "search",
+        wallet,
+        {
+            "q": q,
+            "limit": limit,
+            "tags": tags,
+            "created_after": created_after,
+            "created_before": created_before,
+            "as_of": as_of,
+            "include_superseded": include_superseded,
+        },
+        timestamp,
+        nonce,
+        signature,
+        payment_signature=payment_signature,
+    )
+
+
+@mcp.tool()
+async def memory_get(wallet: str, memory_id: str, timestamp: str, nonce: str, signature: str) -> dict[str, Any]:
+    """Fetch one of your memories by id. Another wallet's id (or a deleted
+    one) returns the same 404 as an id that never existed. Call
+    memory_prepare with operation "get" and params {"memory_id": ...} first.
+
+    Args:
+        wallet: Your agent's 0x wallet address.
+        memory_id: The memory's UUID.
+        timestamp: From memory_prepare.
+        nonce: From memory_prepare (single use).
+        signature: Your wallet's signature over memory_prepare's message_to_sign.
+    """
+    return await _memory_call("get", wallet, {"memory_id": memory_id}, timestamp, nonce, signature)
+
+
+@mcp.tool()
+async def memory_update(
+    wallet: str,
+    memory_id: str,
+    timestamp: str,
+    nonce: str,
+    signature: str,
+    content: str | None = None,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Update a memory WITHOUT overwriting it: creates a new version and
+    closes the old one (`valid_until` / `superseded_by`), so history is kept.
+    Omitted fields carry over. Returns `previous` and `current`. Only the
+    current version can be updated (409 otherwise, naming the current id).
+    Call memory_prepare with operation "update" and the same arguments first.
+
+    Args:
+        wallet: Your agent's 0x wallet address.
+        memory_id: UUID of the CURRENT version to supersede.
+        timestamp: From memory_prepare.
+        nonce: From memory_prepare (single use).
+        signature: Your wallet's signature over memory_prepare's message_to_sign.
+        content: New text (re-embedded). Provide at least one of content/tags/metadata/source.
+        tags: Replacement tags.
+        metadata: Replacement metadata object.
+        source: New source label.
+    """
+    return await _memory_call(
+        "update",
+        wallet,
+        {"memory_id": memory_id, "content": content, "tags": tags, "metadata": metadata, "source": source},
+        timestamp,
+        nonce,
+        signature,
+    )
+
+
+@mcp.tool()
+async def memory_history(wallet: str, memory_id: str, timestamp: str, nonce: str, signature: str) -> dict[str, Any]:
+    """Full version chain for a memory, oldest first, with each version's
+    `valid_from` / `valid_until` / `superseded_by`. Works from any version's
+    id. Call memory_prepare with operation "history" first.
+
+    Args:
+        wallet: Your agent's 0x wallet address.
+        memory_id: UUID of any version in the chain.
+        timestamp: From memory_prepare.
+        nonce: From memory_prepare (single use).
+        signature: Your wallet's signature over memory_prepare's message_to_sign.
+    """
+    return await _memory_call("history", wallet, {"memory_id": memory_id}, timestamp, nonce, signature)
+
+
+@mcp.tool()
+async def memory_delete(
+    wallet: str,
+    memory_id: str,
+    timestamp: str,
+    nonce: str,
+    signature: str,
+    scope: str = "chain",
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """PERMANENTLY delete a memory (hard delete; right-to-be-forgotten). The
+    content is not recoverable; only an audit row (no content) is kept. The
+    default scope "chain" removes EVERY version of the memory; "version"
+    removes only this one. Call memory_prepare with operation "delete" and
+    the same arguments first.
+
+    Args:
+        wallet: Your agent's 0x wallet address.
+        memory_id: UUID of any version in the chain.
+        timestamp: From memory_prepare.
+        nonce: From memory_prepare (single use).
+        signature: Your wallet's signature over memory_prepare's message_to_sign.
+        scope: "chain" (all versions, default) or "version" (just this row).
+        reason: Optional note recorded in the audit log (max 200 chars).
+    """
+    return await _memory_call(
+        "delete", wallet, {"memory_id": memory_id, "scope": scope, "reason": reason}, timestamp, nonce, signature
+    )
+
+
+@mcp.tool()
+async def memory_deletions(wallet: str, timestamp: str, nonce: str, signature: str) -> dict[str, Any]:
+    """Your deletion audit log (ids, times, reasons; never content). Call
+    memory_prepare with operation "deletions" first.
+
+    Args:
+        wallet: Your agent's 0x wallet address.
+        timestamp: From memory_prepare.
+        nonce: From memory_prepare (single use).
+        signature: Your wallet's signature over memory_prepare's message_to_sign.
+    """
+    return await _memory_call("deletions", wallet, {}, timestamp, nonce, signature)
 
 
 if __name__ == "__main__":
