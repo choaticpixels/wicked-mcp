@@ -3,7 +3,7 @@
   "name": "io.github.choaticpixels/wicked-mcp",
   "title": "Wicked MCP",
   "description": "The whole Wicked suite for agents: trading data, DeFi health, token risk, brokerage sync, identity, reputation, tool registry, memory. x402-native.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "websiteUrl": "https://mcp.wickedapi.com",
   "repository": {
     "url": "https://github.com/choaticpixels/wicked-mcp",
@@ -13,7 +13,7 @@
     {
       "registryType": "npm",
       "identifier": "wickedapi-mcp",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "transport": {
         "type": "stdio"
       },
