@@ -48,3 +48,32 @@ test("rejects bad Host, non-POST and unknown paths; /health is open", async () =
   });
   assert.equal(status, 421);
 });
+
+test("front door: landing page, llms.txt, server card, prompts and usage stats", async () => {
+  const base = `http://localhost:${PORT}`;
+  const html = await (await fetch(`${base}/`)).text();
+  assert.match(html, /Wicked MCP/);
+  assert.match(html, /70 tools/);
+  const llms = await (await fetch(`${base}/llms.txt`)).text();
+  assert.match(llms, /claude mcp add --transport http wicked/);
+  assert.match(llms, /memory_prepare/);
+  const card = await (await fetch(`${base}/.well-known/mcp/server-card.json`)).json();
+  assert.equal(card.tools.length, 70);
+  assert.equal(card.transport.endpoint, "/mcp");
+
+  const c = new Client({ name: "e2e2", version: "1" });
+  await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
+  const { prompts } = await c.listPrompts();
+  for (const p of ["rug_check", "fact_check", "verify_agent", "find_reliable_tool", "agent_memory_guide"]) {
+    assert.ok(prompts.some((x) => x.name === p), `missing prompt ${p}`);
+  }
+  const pr = await c.getPrompt({ name: "verify_agent", arguments: { wallet: "0x0000000000000000000000000000000000000001" } });
+  assert.match(pr.messages[0].content.text, /identity_status/);
+  await c.callTool({ name: "reputation_tiers", arguments: {} });
+  await c.close();
+
+  const stats = await (await fetch(`${base}/stats`)).json();
+  assert.ok(stats.total_calls >= 1);
+  assert.ok(stats.tools.some((t) => t.tool === "reputation_tiers"));
+  assert.ok(!JSON.stringify(stats).includes("0x0000"), "stats must not contain arguments");
+});

@@ -17,7 +17,7 @@ MCP server for the whole [Wicked](https://wickedapi.com) suite — trading data,
 | [Wicked Memory](https://memory.wickedapi.com) | 8 (`memory_prepare`, `memory_store`, `memory_search`, …) | wallet signature on every call; only search is metered |
 | [x402 Paywall](https://paywall.wickedapi.com) | 8 (`paywall_*`) | `paywall_signup` is open; the rest need the tenant key |
 
-Plus **6 resources** (the platform directory, `llms.txt`, and each service's live endpoint catalog) and **3 prompts** (`rug_check`, `vet_dependency`, `morning_briefing`) that chain tools together the way the [cookbook](../cookbooks/wickedapi-cookbook.md) does.
+Plus **6 resources** (the platform directory, `llms.txt`, and each service's live endpoint catalog) and **7 prompts** (`rug_check`, `vet_dependency`, `morning_briefing`, `fact_check`, `verify_agent`, `find_reliable_tool`, `agent_memory_guide`) that chain tools together the way the [cookbook](../cookbooks/wickedapi-cookbook.md) does.
 
 These tools never sign anything or hold a key. Identity, Registry registration and Memory take a signature you produce with your own wallet (`identity_get_nonce` / `memory_prepare` return the exact message to sign). Calls that need x402 payment return the real `402` challenge (decoded under `payment_required` for x402 v2) rather than auto-paying — `WICKEDAPI_PAYER_PRIVATE_KEY` auto-pay applies to the Trading, Protocol Health, Token Risk and Broker Sync tools.
 
@@ -75,6 +75,15 @@ Read without calling a tool — useful for a client that surfaces resources in i
 - `wickedapi://platform/llms` — the platform's `llms.txt`
 - `wickedapi://trading/status`, `wickedapi://protocol_health/status`, `wickedapi://token_risk/status`, `wickedapi://broker_sync/status` — each service's live endpoint catalog
 
+## Quick start
+
+```bash
+claude mcp add --transport http wicked https://mcp.wickedapi.com/mcp   # Claude Code, no install
+npx -y wickedapi-mcp                                                    # local stdio
+```
+
+Claude Desktop / Cursor / VS Code config and per-framework starters: see the [cookbooks](https://github.com/choaticpixels/api_services/tree/main/cookbooks). The remote also serves a landing page at `/`, `/llms.txt`, an MCP server card at `/.well-known/mcp/server-card.json`, and aggregate per-tool call counts at `/stats` (counts only; no arguments or IPs).
+
 ## Prompts
 
 One-click workflows that chain real tool calls (Claude Desktop and other prompt-aware clients surface these directly):
@@ -82,6 +91,10 @@ One-click workflows that chain real tool calls (Claude Desktop and other prompt-
 - **`rug_check`** (`address`, `chain`, optional `symbol`) — token risk check + market sentiment + optional momentum read, before buying.
 - **`vet_dependency`** (`slug`, optional `token_address`, `chain`) — protocol health + optional contract-level risk check, before building on a DeFi protocol.
 - **`morning_briefing`** (optional `symbol`) — macro calendar + earnings calendar + sentiment + momentum verdict, as one digest.
+- **`fact_check`** (`output`, optional `source`) — split an answer into claims and verify each with Wicked Sanity.
+- **`verify_agent`** (`wallet`) — Identity assertion + Reputation stake/tier before you transact with an agent.
+- **`find_reliable_tool`** (`need`, optional `category`, `min_score`) — Registry search by real uptime/latency/schema scores.
+- **`agent_memory_guide`** (`wallet`, `task`) — the two-step signed Memory flow, explained to the model.
 
 ## Environment variables
 

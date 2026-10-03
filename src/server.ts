@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { registerSuiteTools } from "./suite.js";
+import { registerSuitePrompts } from "./prompts.js";
+import { instrument, type ToolHooks } from "./usage.js";
 
 // --- Service registry -------------------------------------------------
 // One entry per live WickedAPI service. "trading" is the original
@@ -379,7 +381,7 @@ function registerPrompts(server: McpServer) {
 }
 
 
-export const SERVER_VERSION = "0.3.1";
+export const SERVER_VERSION = "0.4.0";
 
 // Everything expensive or network-bound happens once, in loadWorld(): the
 // payer-wallet fetcher and the OpenAPI specs of the generated services.
@@ -403,8 +405,9 @@ export async function loadWorld(): Promise<WickedWorld> {
   return { doFetch, specs };
 }
 
-export function buildServer(world: WickedWorld): { server: McpServer; summary: string } {
+export function buildServer(world: WickedWorld, hooks?: ToolHooks): { server: McpServer; summary: string } {
   const server = new McpServer({ name: "wickedapi", version: SERVER_VERSION });
+  if (hooks) instrument(server as any, hooks);
   let totalTools = 0;
   const loaded: string[] = [];
   for (const { service, doc } of world.specs) {
@@ -418,8 +421,9 @@ export function buildServer(world: WickedWorld): { server: McpServer; summary: s
 
   registerResources(server);
   registerPrompts(server);
+  registerSuitePrompts(server);
   return {
     server,
-    summary: `${totalTools} tools across ${loaded.length} group(s) (${loaded.join(", ")}), ${2 + SERVICES.length} resources, 3 prompts`,
+    summary: `${totalTools} tools across ${loaded.length} group(s) (${loaded.join(", ")}), ${2 + SERVICES.length} resources, 7 prompts`,
   };
 }
