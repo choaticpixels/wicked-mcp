@@ -1,0 +1,145 @@
+{
+  "manifest_version": "0.3",
+  "name": "wickedapi-mcp",
+  "display_name": "WickedAPI",
+  "version": "0.3.1",
+  "description": "The whole Wicked suite in one MCP server — trading data, DeFi protocol health, token safety, brokerage sync, agent identity, reputation, tool registry, hallucination checks, persistent memory, and x402 paywalls. No signup: pay per call in USDC via x402, or use a partner API key.",
+  "long_description": "WickedAPI turns your agent's wallet into its API key.\n\nMost APIs make you sign up, generate a key, and manage a subscription before your agent can ask a single question. This one skips all of that: point this server at a funded Base-mainnet wallet (`wickedapi_payer_private_key`) and every tool call auto-pays a fraction of a cent in USDC via x402 — no account, no dashboard, no monthly bill.\n\nDon't have a wallet handy? It still works. Call any priced tool with no credentials and you'll get back the real x402 payment challenge (price, network, payTo address) instead of a dead end — and the Token Risk Oracle tool is free no matter what.\n\n70 tools across the Wicked suite. The first four services are generated live from each service's own OpenAPI spec:\n- **Trading Data API** (22, unprefixed): spot prices & OHLCV, Wilder ATR, Fair Value Gaps, ICT liquidity levels, perp funding/OI, long/short ratios, order-book depth, spot-vs-perp basis, Hyperliquid, Kalshi prediction markets, DeFi TVL, crypto Fear & Greed, a verified FOMC/CPI/jobs macro calendar, an earnings calendar, Ethereum gas, US Treasury yields, market clock, global crypto stats, and an AI momentum score.\n- **Protocol Health Oracle** (6, `protocol_health_*`): live-scored DeFi protocol health across the full DefiLlama universe.\n- **Token Risk Oracle** (1, `token_risk`, always free): real on-chain scam/rug-check signals for any EVM or Solana token.\n- **Broker Sync API** (6, `broker_sync_*`): real positions, balances, and transactions across 30+ brokerages.\n- **Wicked Reputation** (5, `reputation_*`, free): on-chain agent staking, tiers and reputation.\n- **Wicked Registry** (6, `registry_*`): real uptime/latency/schema scores for x402 and MCP tools.\n- **Wicked Identity** (6, `identity_*`): reverse-CAPTCHA / Know-Your-Agent verification with signed assertions.\n- **Wicked Sanity** (2, `sanity_check*`): hallucination / eval check of a claim against your context or live web evidence.\n- **Wicked Memory** (8, `memory_*`): persistent, wallet-scoped agent memory with semantic search and versioned history.\n- **x402 Paywall** (8, `paywall_*`): put any HTTP endpoint behind pay-per-call USDC on Base.\n\nIdentity, Registry registration and Memory never sign anything or hold a key: you supply the wallet signature yourself.\n\nPlus 6 resources (the platform directory, llms.txt, and each service's live catalog) and 3 prompts (`rug_check`, `vet_dependency`, `morning_briefing`) that chain tools together into one-click workflows.\n\nNo fabricated data, ever — upstream failures return a real error, never a made-up number.",
+  "author": {
+    "name": "WickedAPI",
+    "url": "https://api.wickedapi.com"
+  },
+  "homepage": "https://api.wickedapi.com",
+  "documentation": "https://api.wickedapi.com/docs",
+  "support": "https://api.wickedapi.com",
+  "license": "MIT",
+  "keywords": [
+    "trading",
+    "crypto",
+    "stocks",
+    "market-data",
+    "finance",
+    "defi",
+    "prediction-markets",
+    "x402",
+    "payments",
+    "agents",
+    "identity",
+    "reputation",
+    "memory",
+    "sanity",
+    "mcp"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/dist/index.js"
+      ],
+      "env": {
+        "WICKEDAPI_API_KEY": "${user_config.wickedapi_api_key}",
+        "WICKEDAPI_PAYER_PRIVATE_KEY": "${user_config.wickedapi_payer_private_key}",
+        "WICKEDAPI_BASE_URL": "${user_config.wickedapi_base_url}",
+        "WICKEDAPI_PROTOCOL_HEALTH_URL": "${user_config.wickedapi_protocol_health_url}",
+        "WICKEDAPI_TOKEN_RISK_URL": "${user_config.wickedapi_token_risk_url}",
+        "WICKEDAPI_BROKER_SYNC_URL": "${user_config.wickedapi_broker_sync_url}",
+        "REGISTRY_API_KEY": "${user_config.registry_api_key}",
+        "IDENTITY_API_KEY": "${user_config.identity_api_key}",
+        "SANITY_API_KEY": "${user_config.sanity_api_key}",
+        "MEMORY_API_KEY": "${user_config.memory_api_key}",
+        "PAYWALL_API_KEY": "${user_config.paywall_api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "wickedapi_payer_private_key": {
+      "type": "string",
+      "title": "Base Wallet Private Key (recommended)",
+      "description": "A funded Base-mainnet wallet private key. If set, every call auto-pays the x402 challenge in USDC (~$0.001/call) — no API key or signup needed.",
+      "sensitive": true,
+      "required": false
+    },
+    "wickedapi_api_key": {
+      "type": "string",
+      "title": "API Key (optional)",
+      "description": "A free, rate-limited partner API key, if you have one. Not required if you configure a payer wallet instead.",
+      "sensitive": true,
+      "required": false
+    },
+    "wickedapi_base_url": {
+      "type": "string",
+      "title": "Trading Data API URL (advanced)",
+      "description": "Override the Trading Data API base URL. Defaults to https://api.wickedapi.com.",
+      "required": false,
+      "default": "https://api.wickedapi.com"
+    },
+    "wickedapi_protocol_health_url": {
+      "type": "string",
+      "title": "Protocol Health Oracle URL (advanced)",
+      "description": "Override the Protocol Health Oracle base URL. Defaults to https://protocol-health-oracle.wickedapi.com.",
+      "required": false,
+      "default": "https://protocol-health-oracle.wickedapi.com"
+    },
+    "wickedapi_token_risk_url": {
+      "type": "string",
+      "title": "Token Risk Oracle URL (advanced)",
+      "description": "Override the Token Risk Oracle base URL. Defaults to https://token-risk-oracle.wickedapi.com.",
+      "required": false,
+      "default": "https://token-risk-oracle.wickedapi.com"
+    },
+    "wickedapi_broker_sync_url": {
+      "type": "string",
+      "title": "Broker Sync API URL (advanced)",
+      "description": "Override the Broker Sync API base URL. Defaults to https://broker-sync-api.wickedapi.com.",
+      "required": false,
+      "default": "https://broker-sync-api.wickedapi.com"
+    },
+    "registry_api_key": {
+      "type": "string",
+      "title": "Wicked Registry API Key (optional)",
+      "description": "Free-tier key for registry_search_tools / registry_tool_detail. Omit to get the x402 payment challenge instead.",
+      "sensitive": true,
+      "required": false
+    },
+    "identity_api_key": {
+      "type": "string",
+      "title": "Wicked Identity API Key (optional)",
+      "description": "Free-tier key for identity_status. Omit to get the x402 payment challenge instead.",
+      "sensitive": true,
+      "required": false
+    },
+    "sanity_api_key": {
+      "type": "string",
+      "title": "Wicked Sanity API Key (optional)",
+      "description": "Free-tier key for sanity_check / sanity_check_batch. Omit to get the x402 payment challenge instead.",
+      "sensitive": true,
+      "required": false
+    },
+    "memory_api_key": {
+      "type": "string",
+      "title": "Wicked Memory API Key (optional)",
+      "description": "Free-tier key for the metered memory_search call. Memory still needs a wallet signature on every call.",
+      "sensitive": true,
+      "required": false
+    },
+    "paywall_api_key": {
+      "type": "string",
+      "title": "x402 Paywall Tenant Key (optional)",
+      "description": "Bearer key returned once by paywall_signup. Needed for the paywall_* route and settlement tools.",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}

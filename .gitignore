@@ -1,5 +1,8 @@
-__pycache__/
-*.pyc
-.venv/
-*.venv/
+node_modules/
+dist/
+mcpb-build/
+mcpb-extract-test/
+*.mcpb
+*.log
 .env
+.DS_Store

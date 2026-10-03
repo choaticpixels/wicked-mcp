@@ -2,13 +2,37 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.choaticpixels/wicked-mcp",
   "title": "Wicked MCP",
-  "description": "Trading data, agent reputation, tool reliability, Know-Your-Agent identity. x402-native.",
-  "version": "1.0.0",
+  "description": "The whole Wicked suite for agents: trading data, DeFi health, token risk, brokerage sync, identity, reputation, tool registry, memory. x402-native.",
+  "version": "0.3.1",
   "websiteUrl": "https://mcp.wickedapi.com",
   "repository": {
     "url": "https://github.com/choaticpixels/wicked-mcp",
     "source": "github"
   },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "wickedapi-mcp",
+      "version": "0.3.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "WICKEDAPI_API_KEY",
+          "description": "Free-tier partner key for the data services. Omit to fall back to x402.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "WICKEDAPI_PAYER_PRIVATE_KEY",
+          "description": "Funded Base wallet key; auto-pays x402 for Trading, Protocol Health, Token Risk and Broker Sync calls.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
   "remotes": [
     {
       "type": "streamable-http",

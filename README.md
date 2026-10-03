@@ -1,162 +1,114 @@
-# Wicked MCP server
+# WickedAPI MCP Server
 
-An MCP server wrapping the public HTTP surface of [WickedAPI](https://api.wickedapi.com)
-(trading data), [Wicked Reputation](https://stake.wickedapi.com) (on-chain
-agent staking/reputation), [Wicked Registry](https://registry.wickedapi.com)
-(real reliability scores for x402/MCP tools), [Wicked Identity](https://verify.wickedapi.com)
-(reverse-CAPTCHA / Know-Your-Agent verification), [Wicked Sanity](https://sanity.wickedapi.com)
-(hallucination / eval check), and [Wicked Memory](https://memory.wickedapi.com)
-(persistent, wallet-scoped agent memory) — 30 tools, no new backend
-logic, just a protocol-native front door onto the same endpoints each
-service's own docs show calling with plain `requests`. Live at
-**`mcp.wickedapi.com`**; the reputation/staking, registry, identity, and
-sanity services and cookbooks live in separate (private) repos.
+MCP server for the whole [Wicked](https://wickedapi.com) suite — trading data, DeFi protocol health, token safety, brokerage sync, agent identity, reputation, a tool-reliability registry, hallucination checks, persistent agent memory, and x402 paywalls, in one server.
 
-## Tools
+**70 tools** across 10 live services. The first four are generated automatically from each service's own live `openapi.json`, so the list always matches what's deployed; the rest are hand-written because they use wallet signatures and non-`/v1` routes:
 
-**WickedAPI** (works unauthenticated via x402, or with a free-tier key — see below)
-- `wickedapi_price(symbol, asset_class?)`
-- `wickedapi_momentum(symbol, timeframe?)`
-- `wickedapi_funding_oi(symbol)`
+| Service | Tools | Auth |
+| --- | --- | --- |
+| [Trading Data API](https://api.wickedapi.com) | 22 (unprefixed: `price`, `ohlcv`, `fvg`, `momentum_score`, `sentiment`, `macro_calendar`, …) | API key or x402, 5 free |
+| [Protocol Health Oracle](https://protocol-health-oracle.wickedapi.com) | 6 (`protocol_health_*`) | API key or x402, scoreboard free |
+| [Token Risk Oracle](https://token-risk-oracle.wickedapi.com) | 1 (`token_risk`) | 100% free, no key |
+| [Broker Sync API](https://broker-sync-api.wickedapi.com) | 6 (`broker_sync_*`) | API key or x402 |
+| [Wicked Reputation](https://stake.wickedapi.com) | 5 (`reputation_*`) | free, no key |
+| [Wicked Registry](https://registry.wickedapi.com) | 6 (`registry_*`) | search/detail: key or x402; featured/badge/report free; register needs your signature |
+| [Wicked Identity](https://verify.wickedapi.com) | 6 (`identity_*`) | status: key or x402; the rest need your wallet signature over a nonce |
+| [Wicked Sanity](https://sanity.wickedapi.com) | 2 (`sanity_check`, `sanity_check_batch`) | key or x402 |
+| [Wicked Memory](https://memory.wickedapi.com) | 8 (`memory_prepare`, `memory_store`, `memory_search`, …) | wallet signature on every call; only search is metered |
+| [x402 Paywall](https://paywall.wickedapi.com) | 8 (`paywall_*`) | `paywall_signup` is open; the rest need the tenant key |
 
-**Wicked Reputation** (all public, all free, no key needed)
-- `reputation_status(wallet)`
-- `reputation_statement(wallet)` — position + full event ledger
-- `reputation_query(tier?, min_stake?, ..., sort?, limit?)` — filter/sort agents
-- `reputation_tiers()`
-- `reputation_transparency()`
+Plus **6 resources** (the platform directory, `llms.txt`, and each service's live endpoint catalog) and **3 prompts** (`rug_check`, `vet_dependency`, `morning_briefing`) that chain tools together the way the [cookbook](../cookbooks/wickedapi-cookbook.md) does.
 
-**Wicked Registry** (search/detail work unauthenticated via x402, or with a
-free-tier key — see below; featured/badge/report are always free)
-- `registry_search_tools(category?, protocol?, min_score?, sort?, limit?)`
-- `registry_tool_detail(tool_id)` — score breakdown + real check history
-- `registry_featured_tools()` — top scored tools, always free
-- `registry_tool_badge(tool_id)` — a tool's current score, always free
-- `registry_report_tool(tool_id, reporter, reason, evidence?)` — file a complaint, always free
-- `registry_register_tool(name, endpoint_url, protocol, category, description, owner_wallet, signature, timestamp, schema_url?)` —
-  register a tool you own; you supply a real wallet signature, this tool
-  doesn't sign anything itself
+These tools never sign anything or hold a key. Identity, Registry registration and Memory take a signature you produce with your own wallet (`identity_get_nonce` / `memory_prepare` return the exact message to sign). Calls that need x402 payment return the real `402` challenge (decoded under `payment_required` for x402 v2) rather than auto-paying — `WICKEDAPI_PAYER_PRIVATE_KEY` auto-pay applies to the Trading, Protocol Health, Token Risk and Broker Sync tools.
 
-**Wicked Identity** (register/challenge/response require a real wallet
-signature over a server-issued nonce — these tools never sign anything
-themselves; status is public and works unauthenticated via x402 or with a
-free-tier key)
-- `identity_get_nonce(wallet)` — fetch a fresh one-time nonce before every signed call below
-- `identity_register(wallet, nonce, signature)` — lightweight identity record, no stake required
-- `identity_get_challenge(wallet, nonce, signature)` — issue a real, time-boxed (12s default) agent-liveness challenge
-- `identity_submit_response(wallet, nonce, signature, challenge_id, response_text)` — score it; pass issues a signed assertion token
-- `identity_status(wallet)` — does this wallet hold a valid, unexpired assertion? always free
-- `identity_jwks()` — public RS256 keys to verify an assertion_token locally, always free
+## Remote endpoint (no install)
 
-**Wicked Sanity** (hallucination / eval check — works unauthenticated via
-x402, or with a free-tier key; every verdict is real model inference run at
-request time, never cached or guessed)
-- `sanity_check(claim, context?, mode?)` — verify one claim. `mode: "grounded"`
-  (default; `context` required) checks it against source text you supply;
-  `mode: "open"` checks it against live web evidence. Open mode is
-  consistency with current web content, **not objective truth**, and returns
-  `insufficient_evidence` when nothing relevant is found. Note
-  `confidence_score` is the raw consistency score (a `contradicted` verdict
-  scores near 0), not confidence-in-the-verdict
-- `sanity_check_batch(claims, context?, mode?)` — up to 50 claims against one
-  shared context in a single call; use it for a multi-sentence output rather
-  than one `sanity_check` per sentence
+The same 70 tools are served over streamable HTTP at **`https://mcp.wickedapi.com/mcp`** (stateless, rate-limited per IP; the public deployment carries no personal keys, so paid calls return the x402 challenge). Point any streamable-HTTP MCP client at it. To self-host, build the `Dockerfile` (or `npm run build && npm run start:http`); see `.env.example` for `RATE_LIMIT_PER_MINUTE`, `ALLOWED_HOSTS` and `TRUSTED_CLIENT_IP_HEADER`.
 
-**Wicked Memory** (persistent, wallet-scoped agent memory: store, semantic
-search, versioned history, hard delete — only search is metered)
+## No signup required
 
-Every memory call needs a fresh per-request wallet signature. Like the Identity
-tools, this server never signs anything or holds a key: call `memory_prepare`
-with the operation and its arguments, sign the `message_to_sign` it returns
-(EIP-191 `personal_sign`) with your own wallet, then call the matching tool
-with the **same arguments** plus the returned `timestamp`, `nonce` and your
-`signature`. The nonce is single-use and the timestamp must be within 5
-minutes, so prepare again for every call.
-- `memory_prepare(operation, wallet, params?)` — step 1 of every call; returns the message to sign
-- `memory_store(wallet, content, …)` — store a memory (free); a real embedding is computed at write time
-- `memory_search(wallet, q, …)` — semantic search over **your** memories only, ranked by real cosine
-  similarity. The one metered call: free with `MEMORY_API_KEY`, otherwise a `402` with x402 v2 payment
-  instructions under `payment_required` (0.001 USDC on Base); pay, then call again with the same
-  arguments plus `payment_signature` (a 402 does not consume the nonce). Supports `tags`, time filters,
-  `as_of` (memory as it stood at a past instant) and `include_superseded`
-- `memory_get`, `memory_history`, `memory_deletions` — read one memory, its full version chain, or your deletion audit log
-- `memory_update(wallet, memory_id, …)` — supersedes: creates a new version and closes the old one
-  (`valid_until` / `superseded_by`); nothing is overwritten
-- `memory_delete(wallet, memory_id, scope?, reason?)` — permanent hard delete; `scope: "chain"` (default)
-  removes every version, `"version"` just one. Only an audit row (no content) is kept
+Every tool hits a real endpoint gated by [x402](https://x402.org) (HTTP-native pay-per-call, USDC on Base) with an API-key fallback — and the Token Risk Oracle tool is free no matter what:
 
-Every tool returns the upstream JSON body plus an `http_status` field.
-Non-2xx responses are returned, not raised — a 402 from WickedAPI carries
-real x402 payment instructions in the JSON body (older x402 v1); a 402 from
-Wicked Registry's search/detail tools, Wicked Identity's status tool, or
-Wicked Sanity's check tools carries them decoded from the `PAYMENT-REQUIRED` header into a
-`payment_required` key instead (newer x402 v2); a 404 from the reputation
-service just means the wallet has never registered. All of that is useful
-data for whatever's calling the tool, not failures to
-hide.
+- **Zero config** — calls without credentials still work; paid endpoints return the real `402` payment challenge (price, network, `payTo`) as the tool result.
+- **Autonomous pay-per-call** — set `WICKEDAPI_PAYER_PRIVATE_KEY` to a funded Base-mainnet wallet's private key, and every call auto-pays ~$0.001 in USDC and returns real data. No account, no subscription.
+- **Partner API key** — set `WICKEDAPI_API_KEY` for free, rate-limited access across all four services (same key works everywhere).
 
-## Run it locally (stdio — for Claude Desktop, `mcp dev`, etc.)
-
-```bash
-pip install -r requirements.txt
-python server.py
-```
-
-Add to Claude Desktop's config:
+## Install
 
 ```json
 {
   "mcpServers": {
-    "wicked": {
-      "command": "python",
-      "args": ["/absolute/path/to/mcp-server/server.py"],
-      "env": { "WICKEDAPI_API_KEY": "your-key-if-you-have-one" }
+    "wickedapi": {
+      "command": "npx",
+      "args": ["-y", "wickedapi-mcp"],
+      "env": {
+        "WICKEDAPI_API_KEY": "your-key-here"
+      }
     }
   }
 }
 ```
 
-No `WICKEDAPI_API_KEY`? WickedAPI tools still work — they fall back to
-x402, returning payment instructions instead of data, same as calling the
-API directly with no key.
+Or for autonomous pay-per-call instead of a key:
 
-## Remote deployment (streamable HTTP)
-
-`http_app.py` wraps the same server with `mcp.streamable_http_app()` and a
-per-IP rate limit (`RATE_LIMIT_PER_MINUTE`, default 30) — the one thing
-that changes when this runs as a public endpoint instead of something each
-user runs under their own control. Deployed via the `Dockerfile` in this
-directory; Railway sets `$PORT`.
-
-```bash
-uvicorn http_app:app --host 0.0.0.0 --port 8080
+```json
+{
+  "mcpServers": {
+    "wickedapi": {
+      "command": "npx",
+      "args": ["-y", "wickedapi-mcp"],
+      "env": {
+        "WICKEDAPI_PAYER_PRIVATE_KEY": "0xyour-base-wallet-private-key"
+      }
+    }
+  }
+}
 ```
 
-Live at **`https://mcp.wickedapi.com/mcp`** — point any streamable-HTTP
-MCP client there directly. (`https://wicked-mcp-production.up.railway.app/mcp`
-also works — same deployment, Railway-generated domain.)
+Nothing configured? The Token Risk Oracle tool and the 5 free Trading Data API endpoints (`sentiment`, `macro_calendar`, `market_overview`, `gas`, `kalshi_probability`) still work with zero setup.
 
-**No API key is baked into the deployed server.** It authenticates
-WickedAPI calls with whatever `WICKEDAPI_API_KEY` is set in its own
-environment (optional — omit it and every caller just gets the x402
-fallback), so hosting cost doesn't scale with usage. If you want free-tier
-WickedAPI access through the remote endpoint, run it locally instead with
-your own key — see above.
+## Resources
 
-## Config
+Read without calling a tool — useful for a client that surfaces resources in its UI:
 
-| Env var | Default | Notes |
-|---|---|---|
-| `WICKEDAPI_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every WickedAPI call. |
-| `REGISTRY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on every paid Wicked Registry call. |
-| `IDENTITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on the paid `identity_status` call. |
-| `SANITY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on `sanity_check` / `sanity_check_batch`. **Set on the public deployment** to a dedicated *restricted* key, so public callers get real verdicts: Sanity enforces its limits (20 requests/minute and 30 open-mode checks/day, shared by all users; grounded mode is not counted against the daily cap) via its `API_KEY_LIMITS` setting, because every caller shares that one key and open mode spends a live web search per call. Over the limit, the tool returns `http_status` 429 with `Retry-After`. |
-| `MEMORY_API_KEY` | _(unset)_ | Optional. Omit to fall back to x402 on `memory_search` (the only metered Memory call). Memory keys are issued by the operator. |
-| `MEMORY_BASE_URL` | `https://memory.wickedapi.com` | Override for local/staging testing only (staging: `https://memory-testnet.wickedapi.com`, Base Sepolia). |
-| `WICKEDAPI_BASE_URL` | `https://api.wickedapi.com` | Override for local/staging testing only. |
-| `REPUTATION_BASE_URL` | `https://stake.wickedapi.com` | Override for local/staging testing only. |
-| `REGISTRY_BASE_URL` | `https://registry.wickedapi.com` | Override for local/staging testing only. |
-| `IDENTITY_BASE_URL` | `https://verify.wickedapi.com` | Override for local/staging testing only. |
-| `SANITY_BASE_URL` | `https://sanity.wickedapi.com` | Override for local/staging testing only (staging: `https://wicked-sanity-staging.up.railway.app`). |
-| `RATE_LIMIT_PER_MINUTE` | `30` | HTTP deployment only (`http_app.py`), per real client IP (IPv6 grouped by /64). |
-| `TRUSTED_CLIENT_IP_HEADER` | `x-real-ip` | HTTP deployment only. Header carrying the caller's real IP, set by the proxy in front (Railway sets `X-Real-IP`). Behind the proxy the TCP peer is always Railway's own address, so without this every caller would share one bucket. Only safe when the proxy sets the header itself; set empty to use the TCP peer instead (e.g. if run without a proxy). If the domain is ever proxied through Cloudflare, point it at `cf-connecting-ip`. Missing/invalid values fall back to the TCP peer. |
+- `wickedapi://platform/services` — the full service directory (JSON)
+- `wickedapi://platform/llms` — the platform's `llms.txt`
+- `wickedapi://trading/status`, `wickedapi://protocol_health/status`, `wickedapi://token_risk/status`, `wickedapi://broker_sync/status` — each service's live endpoint catalog
+
+## Prompts
+
+One-click workflows that chain real tool calls (Claude Desktop and other prompt-aware clients surface these directly):
+
+- **`rug_check`** (`address`, `chain`, optional `symbol`) — token risk check + market sentiment + optional momentum read, before buying.
+- **`vet_dependency`** (`slug`, optional `token_address`, `chain`) — protocol health + optional contract-level risk check, before building on a DeFi protocol.
+- **`morning_briefing`** (optional `symbol`) — macro calendar + earnings calendar + sentiment + momentum verdict, as one digest.
+
+## Environment variables
+
+| Var | Required | Notes |
+| --- | --- | --- |
+| `WICKEDAPI_API_KEY` | no | Free, rate-limited access across all four services (same key works everywhere). |
+| `WICKEDAPI_PAYER_PRIVATE_KEY` | no | Base-mainnet wallet private key. If set, every call auto-pays the x402 challenge in USDC — no key needed. |
+| `WICKEDAPI_BASE_URL` | no | Override the Trading Data API base (default `https://api.wickedapi.com`). |
+| `WICKEDAPI_PROTOCOL_HEALTH_URL` | no | Override the Protocol Health Oracle base (default `https://protocol-health-oracle.wickedapi.com`). |
+| `WICKEDAPI_TOKEN_RISK_URL` | no | Override the Token Risk Oracle base (default `https://token-risk-oracle.wickedapi.com`). |
+| `WICKEDAPI_BROKER_SYNC_URL` | no | Override the Broker Sync API base (default `https://broker-sync-api.wickedapi.com`). |
+| `REGISTRY_API_KEY` / `IDENTITY_API_KEY` / `SANITY_API_KEY` / `MEMORY_API_KEY` | no | Free-tier keys for the paid calls of Registry, Identity, Sanity and Memory search. Omit to get the x402 challenge instead. |
+| `PAYWALL_API_KEY` | for `paywall_*` | Tenant Bearer key returned once by `paywall_signup`. |
+| `REPUTATION_BASE_URL` / `REGISTRY_BASE_URL` / `IDENTITY_BASE_URL` / `SANITY_BASE_URL` / `MEMORY_BASE_URL` / `PAYWALL_BASE_URL` | no | Override the matching service base (defaults are the `*.wickedapi.com` hosts). |
+| `WICKEDAPI_SHOWCASE_URL` | no | Override the platform directory base used by resources (default `https://wickedapi.com`). |
+
+If neither `WICKEDAPI_API_KEY` nor `WICKEDAPI_PAYER_PRIVATE_KEY` is set, paid calls still succeed at the protocol level — you'll get the real `402` challenge back as the tool result instead of data. If one service's spec fails to load (network hiccup, that service is down), its tools are simply skipped for the session — the rest still register normally.
+
+## Local development
+
+```bash
+npm install
+npm test            # builds, then unit + end-to-end tests (e2e needs network)
+node dist/index.js  # stdio
+node dist/http.js   # streamable HTTP on $PORT (default 8080)
+```
+
+## What this is not
+
+This server doesn't reimplement any data logic — it's a thin bridge from MCP tool calls to the live Wicked HTTP endpoints across all ten services. All the actual market data, indicators, scoring, and risk signals live in the APIs themselves.
