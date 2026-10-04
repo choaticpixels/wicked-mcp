@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { normalizeIp } from "../dist/clientIp.js";
 import { rateLimited } from "../dist/rateLimit.js";
 import { __test } from "../dist/suite.js";
+import { scrubEvent } from "../dist/observability.js";
 
 test("normalizeIp: v4, mapped v6, /64 grouping, junk", () => {
   assert.equal(normalizeIp("203.0.113.9"), "203.0.113.9");
@@ -28,4 +29,21 @@ test("memoryBuild: matches the signed Python server byte-for-byte (vectors from 
   assert.equal(d.path, "/memories/123e4567-e89b-12d3-a456-426614174000?scope=chain&reason=a%26b%20c%2Fd");
   assert.throws(() => __test.memoryBuild("get", { memory_id: "nope" }), /UUID/);
   assert.throws(() => __test.memoryBuild("bogus", {}), /unknown operation/);
+});
+
+test("scrubEvent: drops request bodies and redacts auth headers", () => {
+  const out = scrubEvent({
+    request: {
+      data: { params: { signature: "0xSECRET", content: "private memory" } },
+      query_string: "k=v",
+      cookies: { a: "b" },
+      headers: { "X-API-Key": "k", "payment-signature": "p", "user-agent": "ua" },
+    },
+  });
+  assert.equal(out.request.data, undefined);
+  assert.equal(out.request.query_string, undefined);
+  assert.equal(out.request.cookies, undefined);
+  assert.equal(out.request.headers["X-API-Key"], "[redacted]");
+  assert.equal(out.request.headers["payment-signature"], "[redacted]");
+  assert.equal(out.request.headers["user-agent"], "ua");
 });

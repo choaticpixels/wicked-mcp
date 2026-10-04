@@ -11,6 +11,9 @@ import { rateLimited } from "./rateLimit.js";
 import { landingHtml, llmsTxt, serverCard } from "./landing.js";
 import { knownTools, usageHooks, usageSnapshot } from "./usage.js";
 import { buildServer, loadWorld, SERVER_VERSION } from "./server.js";
+import { captureServerError, flushSentry, initSentry } from "./observability.js";
+
+initSentry(SERVER_VERSION);
 
 const PORT = Number(process.env.PORT || 8080);
 const RATE_LIMIT_PER_MINUTE = Number(process.env.RATE_LIMIT_PER_MINUTE || 30);
@@ -97,6 +100,8 @@ async function main() {
       await transport.handleRequest(req, res, body);
     } catch (err) {
       const status = (err as { status?: number }).status ?? 500;
+      // Only server faults: 4xx here are client mistakes (bad JSON, oversized body).
+      if (status >= 500) captureServerError(err, { path: url.pathname, method: req.method });
       if (!res.headersSent) {
         send(res, status, { jsonrpc: "2.0", error: { code: -32603, message: (err as Error).message }, id: null });
       }
@@ -108,5 +113,6 @@ async function main() {
 
 main().catch((err) => {
   console.error("[wickedapi-mcp] fatal:", err);
-  process.exit(1);
+  captureServerError(err, { path: "startup" });
+  void flushSentry().finally(() => process.exit(1));
 });
