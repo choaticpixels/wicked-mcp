@@ -12,14 +12,14 @@ MCP server for the whole [Wicked](https://wickedapi.com) suite — trading data,
 | [Broker Sync API](https://broker-sync-api.wickedapi.com) | 6 (`broker_sync_*`) | API key or x402 |
 | [Wicked Reputation](https://stake.wickedapi.com) | 5 (`reputation_*`) | free, no key |
 | [Wicked Registry](https://registry.wickedapi.com) | 6 (`registry_*`) | search/detail: key or x402; featured/badge/report free; register needs your signature |
-| [Wicked Identity](https://verify.wickedapi.com) | 6 (`identity_*`) | status: key or x402; the rest need your wallet signature over a nonce |
+| [Wicked Identity](https://verify.wickedapi.com) | 8 (`identity_*`) | no wallet? start with `identity_sandbox_register` (no signing); free test key via `identity_get_test_key`; real-wallet calls need your signature over a nonce |
 | [Wicked Sanity](https://sanity.wickedapi.com) | 2 (`sanity_check`, `sanity_check_batch`) | key or x402 |
 | [Wicked Memory](https://memory.wickedapi.com) | 8 (`memory_prepare`, `memory_store`, `memory_search`, …) | wallet signature on every call; only search is metered |
 | [x402 Paywall](https://paywall.wickedapi.com) | 8 (`paywall_*`) | `paywall_signup` is open; the rest need the tenant key |
 
 Plus **6 resources** (the platform directory, `llms.txt`, and each service's live endpoint catalog) and **7 prompts** (`rug_check`, `vet_dependency`, `morning_briefing`, `fact_check`, `verify_agent`, `find_reliable_tool`, `agent_memory_guide`) that chain tools together the way the [cookbook](../cookbooks/wickedapi-cookbook.md) does.
 
-These tools never sign anything or hold a key. Identity, Registry registration and Memory take a signature you produce with your own wallet (`identity_get_nonce` / `memory_prepare` return the exact message to sign). Calls that need x402 payment return the real `402` challenge (decoded under `payment_required` for x402 v2) rather than auto-paying — `WICKEDAPI_PAYER_PRIVATE_KEY` auto-pay applies to the Trading, Protocol Health, Token Risk and Broker Sync tools.
+These tools never sign anything or hold a key. Agents with no wallet can still try Wicked Identity end to end through a sandbox identity (`identity_sandbox_register`, then pass `sandbox_token` instead of a signature); sandbox results are for testing and are never reported as verified. Identity (real wallet), Registry registration and Memory take a signature you produce with your own wallet (`identity_get_nonce` / `memory_prepare` return the exact message to sign). Calls that need x402 payment return the real `402` challenge (decoded under `payment_required` for x402 v2) rather than auto-paying — `WICKEDAPI_PAYER_PRIVATE_KEY` auto-pay applies to the Trading, Protocol Health, Token Risk and Broker Sync tools.
 
 ## Remote endpoint (no install)
 

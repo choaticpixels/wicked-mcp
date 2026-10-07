@@ -385,51 +385,70 @@ export function registerSuiteTools(server: McpServer): number {
   );
 
   // ---- Wicked Identity (reverse-CAPTCHA / Know-Your-Agent) ----
-  const idSig = {
-    wallet: z.string().describe("Your agent's 0x wallet address on Base."),
-    nonce: z.string().describe("Nonce from a FRESH identity_get_nonce call."),
-    signature: z.string().describe("0x-prefixed ECDSA signature over that nonce's message."),
+  // Two onboarding paths. A real wallet signs nonces (this server never signs).
+  // An agent with NO wallet or signing ability uses a sandbox identity:
+  // identity_sandbox_register, then pass sandbox_token instead of nonce/signature.
+  const idWallet = z.string().describe("Your 0x wallet address on Base, or the sandbox wallet from identity_sandbox_register.");
+  const idAuth = {
+    wallet: idWallet,
+    nonce: z.string().optional().describe("Real wallet: nonce from a FRESH identity_get_nonce call. Omit for sandbox."),
+    signature: z.string().optional().describe("Real wallet: 0x-prefixed ECDSA signature over that nonce's message. Omit for sandbox."),
+    sandbox_token: z.string().optional().describe("Sandbox identity: the sandbox_token from identity_sandbox_register. Use INSTEAD of nonce/signature."),
   };
   tool(
+    "identity_sandbox_register",
+    "[Wicked Identity] START HERE if you have no wallet or cannot sign messages. Returns a sandbox wallet + sandbox_token (no signing, no body). Then call identity_get_challenge and identity_submit_response with wallet + sandbox_token. Sandbox results are for trying the service: signed with a separate key (identity_jwks sandbox=true) and never reported as verified. Use a real wallet for an accountable identity. Limit: 10 per IP per hour.",
+    {},
+    () => call("POST", IDENTITY_URL, "/sandbox/register")
+  );
+  tool(
+    "identity_get_test_key",
+    "[Wicked Identity] Get a free self-serve test API key (7-day expiry, 20 requests/min) to use as api_key on identity_status instead of paying via x402. Limit: 5 per IP per day.",
+    { label: z.string().optional().describe("Optional name for this key.") },
+    ({ label }) => call("POST", IDENTITY_URL, "/keys/test", { json: label ? { label } : {} })
+  );
+  tool(
     "identity_get_nonce",
-    "[Wicked Identity] Step 1: a one-time nonce + message to sign. Every signed identity call needs a fresh nonce (single-use, short TTL).",
-    { wallet: idSig.wallet },
+    "[Wicked Identity] Real-wallet path, step 1: a one-time nonce + message to sign. Every signed identity call needs a fresh nonce (single-use, 5-minute TTL). Not needed for sandbox identities.",
+    { wallet: idWallet },
     ({ wallet }) => call("GET", IDENTITY_URL, `/agents/${addr(wallet)}/nonce`)
   );
   tool(
     "identity_register",
-    "[Wicked Identity] Register your wallet (no stake required). Needs your signature over identity_get_nonce's message; this tool never signs.",
-    idSig,
+    "[Wicked Identity] Register a REAL wallet (no stake required). Needs your signature over identity_get_nonce's message; this tool never signs. Sandbox identities are registered by identity_sandbox_register instead.",
+    { wallet: idWallet, nonce: z.string().describe("Nonce from a FRESH identity_get_nonce call."), signature: z.string().describe("0x-prefixed ECDSA signature over that nonce's message.") },
     ({ wallet, nonce, signature }) => call("POST", IDENTITY_URL, "/agents/register", { json: { wallet_address: wallet, nonce, signature } })
   );
   tool(
     "identity_get_challenge",
-    "[Wicked Identity] Request a real time-boxed liveness challenge for a registered wallet (constrained-generation task, ~12s). Answer via identity_submit_response before `expires_at`. Needs a fresh signed nonce.",
-    idSig,
-    ({ wallet, nonce, signature }) => call("POST", IDENTITY_URL, "/verify/challenge", { json: { wallet_address: wallet, nonce, signature } })
+    "[Wicked Identity] Request a real time-boxed liveness challenge (constrained-generation task, 30s budget). The clock starts when this returns: answer in ONE pass via identity_submit_response before `expires_at`. Real wallet: needs a fresh signed nonce (fetch + sign the nonce for the NEXT call before calling this). Sandbox: just wallet + sandbox_token.",
+    idAuth,
+    ({ wallet, nonce, signature, sandbox_token }) =>
+      call("POST", IDENTITY_URL, "/verify/challenge", { json: { wallet_address: wallet, nonce, signature, sandbox_token } })
   );
   tool(
     "identity_submit_response",
-    "[Wicked Identity] Submit your answer to a challenge; scored pass / fail / inconclusive. A pass returns a short-lived signed assertion_token (JWT) verifiable via identity_jwks. Needs a DIFFERENT fresh nonce than identity_get_challenge used.",
+    "[Wicked Identity] Submit your answer to a challenge; scored pass / fail / inconclusive. A pass returns a short-lived signed assertion_token (JWT) verifiable via identity_jwks. Real wallet: needs a DIFFERENT fresh nonce than identity_get_challenge used. Sandbox: wallet + sandbox_token.",
     {
-      ...idSig,
+      ...idAuth,
       challenge_id: z.string().describe("The challenge_id from identity_get_challenge."),
-      response_text: z.string().describe("Your answer exactly as the instructions specify."),
+      response_text: z.string().describe("Your answer exactly as the instructions specify: raw text only."),
     },
-    ({ wallet, nonce, signature, challenge_id, response_text }) =>
-      call("POST", IDENTITY_URL, "/verify/response", { json: { wallet_address: wallet, nonce, signature, challenge_id, response_text } })
+    ({ wallet, nonce, signature, sandbox_token, challenge_id, response_text }) =>
+      call("POST", IDENTITY_URL, "/verify/response", { json: { wallet_address: wallet, nonce, signature, sandbox_token, challenge_id, response_text } })
   );
   tool(
     "identity_status",
-    "[Wicked Identity] Does a wallet currently hold a valid, unexpired assertion? No signature needed. x402 or IDENTITY_API_KEY.",
-    { wallet },
-    ({ wallet }) => call("GET", IDENTITY_URL, `/verify/status/${addr(wallet)}`, { headers: keyHeader(IDENTITY_API_KEY) })
+    "[Wicked Identity] Does a wallet currently hold a valid, unexpired assertion? No signature needed. Pays via x402, or pass api_key (get one free from identity_get_test_key) / set IDENTITY_API_KEY. Sandbox wallets are never `verified`; they report sandbox: true and sandbox_verified instead.",
+    { wallet, api_key: z.string().optional().describe("Optional x-api-key, e.g. from identity_get_test_key.") },
+    ({ wallet, api_key }) =>
+      call("GET", IDENTITY_URL, `/verify/status/${addr(wallet)}`, { headers: keyHeader(api_key || IDENTITY_API_KEY) })
   );
   tool(
     "identity_jwks",
-    "[Wicked Identity] Public RS256 keys to verify an assertion_token locally. Free.",
-    {},
-    () => call("GET", IDENTITY_URL, "/.well-known/jwks.json")
+    "[Wicked Identity] Public RS256 keys to verify an assertion_token locally. Free. Set sandbox=true for the separate key set that signs sandbox assertions.",
+    { sandbox: z.boolean().optional().describe("true = the sandbox key set (issuer wicked-identity-sandbox).") },
+    ({ sandbox }) => call("GET", IDENTITY_URL, sandbox ? "/.well-known/jwks-sandbox.json" : "/.well-known/jwks.json")
   );
 
   // ---- Wicked Sanity (hallucination / eval check) ----
