@@ -275,21 +275,60 @@ export function registerSuiteTools(server: McpServer): number {
   // ---- Wicked Registry ----
   tool(
     "registry_search_tools",
-    "[Wicked Registry] Search x402/MCP tools by real reliability data (uptime, latency, schema conformance). Works via x402 (402 carries payment instructions) or a free-tier REGISTRY_API_KEY.",
+    "[Wicked Registry] Search x402/MCP tools by real reliability data (uptime, latency, schema conformance). Works via x402 (402 carries payment instructions) or a free API key (pass api_key, or set REGISTRY_API_KEY). No key yet? Call registry_onboarding_message then registry_create_api_key to get one yourself. For a quick free check of a known tool, use registry_lookup.",
     {
+      api_key: z.string().optional().describe("Free Wicked Registry API key (wr_...). Overrides REGISTRY_API_KEY."),
       category: z.string().optional().describe('e.g. "data", "crypto".'),
       protocol: z.string().optional().describe('"x402", "mcp" or "rest".'),
       min_score: z.coerce.number().optional().describe("Minimum composite score 0-100; unchecked tools are excluded once set."),
       sort: z.string().optional().describe('"score" (default), "latency" or "recency".'),
       limit: z.coerce.number().optional().describe("1-200, default 50."),
     },
-    (a) => call("GET", REGISTRY_URL, "/tools", { headers: keyHeader(REGISTRY_API_KEY), query: { sort: "score", limit: 50, ...clean(a) } })
+    ({ api_key, ...a }) =>
+      call("GET", REGISTRY_URL, "/tools", { headers: keyHeader(api_key || REGISTRY_API_KEY), query: { sort: "score", limit: 50, ...clean(a) } })
   );
   tool(
     "registry_tool_detail",
-    "[Wicked Registry] One tool's full score breakdown, component history and recent real health checks. x402 or REGISTRY_API_KEY.",
-    { tool_id: z.string().describe("Registry id from registry_search_tools / registry_featured_tools.") },
-    ({ tool_id }) => call("GET", REGISTRY_URL, `/tools/${encodeURIComponent(tool_id)}`, { headers: keyHeader(REGISTRY_API_KEY) })
+    "[Wicked Registry] One tool's full score breakdown, component history and recent real health checks. x402 or a free API key.",
+    {
+      tool_id: z.string().describe("Registry id from registry_lookup / registry_search_tools / registry_featured_tools."),
+      api_key: z.string().optional().describe("Free Wicked Registry API key (wr_...). Overrides REGISTRY_API_KEY."),
+    },
+    ({ tool_id, api_key }) =>
+      call("GET", REGISTRY_URL, `/tools/${encodeURIComponent(tool_id)}`, { headers: keyHeader(api_key || REGISTRY_API_KEY) })
+  );
+  tool(
+    "registry_lookup",
+    "[Wicked Registry] Free lookup: find a tool's id and headline reliability score by name or URL fragment (q), exact endpoint URL (endpoint) or category. No key or payment. Use it to check a tool before your agent pays it; follow with registry_tool_badge or registry_tool_detail.",
+    {
+      q: z.string().optional().describe("Name or URL fragment, at least 2 characters."),
+      endpoint: z.string().optional().describe("Exact endpoint URL of the tool you are about to call."),
+      category: z.string().optional(),
+      limit: z.coerce.number().optional().describe("1-25, default 10."),
+    },
+    (a) => call("GET", REGISTRY_URL, "/lookup", { query: clean(a) })
+  );
+  tool(
+    "registry_onboarding_message",
+    "[Wicked Registry] Step 1 of self-onboarding. Returns the exact message YOU must sign (EIP-191 personal_sign) plus its timestamp, valid for about an hour. action=api_key (needs wallet) for a free API key, or action=register (needs name and endpoint_url) to list your own tool. This tool never signs anything.",
+    {
+      action: z.enum(["api_key", "register"]),
+      wallet: z.string().optional().describe("Your 0x wallet address (required for api_key)."),
+      name: z.string().optional().describe("Tool name (required for register)."),
+      endpoint_url: z.string().optional().describe("Tool endpoint URL (required for register)."),
+    },
+    (a) => call("GET", REGISTRY_URL, "/onboard", { query: { action: a.action, wallet: a.wallet, name: a.name, endpointUrl: a.endpoint_url } })
+  );
+  tool(
+    "registry_create_api_key",
+    "[Wicked Registry] Step 2 of getting a free API key. Submit the wallet, the timestamp and YOUR signature over the message from registry_onboarding_message(action=api_key). The key (wr_...) is returned once - store it and pass it as api_key to registry_search_tools / registry_tool_detail. Up to 3 active keys per wallet; past the daily cap calls fall back to x402.",
+    {
+      wallet: z.string().describe("0x wallet that signed the message."),
+      timestamp: z.string().describe("The timestamp returned with the message."),
+      signature: z.string().describe("0x-prefixed ECDSA signature over the message."),
+      label: z.string().optional().describe("Optional label for the key."),
+    },
+    (a) => call("POST", REGISTRY_URL, "/keys", { json: { wallet: a.wallet, timestamp: a.timestamp, signature: a.signature, label: a.label } })
   );
   tool(
     "registry_featured_tools",
@@ -317,7 +356,7 @@ export function registerSuiteTools(server: McpServer): number {
   );
   tool(
     "registry_register_tool",
-    '[Wicked Registry] Register a tool you own so it gets real synthetic checks and a live score. Needs YOUR signature over "Wicked Registry — Tool Registration\\nname: {name}\\nendpoint: {endpoint_url}\\ntimestamp: {timestamp}" from owner_wallet; this tool never signs.',
+    "[Wicked Registry] Register a tool you own so it gets real synthetic checks and a live score. Get the exact message to sign from registry_onboarding_message(action=register), sign it with owner_wallet, then call this. This tool never signs.",
     {
       name: z.string(),
       endpoint_url: z.string().describe("Live, publicly reachable endpoint."),
@@ -326,7 +365,7 @@ export function registerSuiteTools(server: McpServer): number {
       description: z.string(),
       owner_wallet: z.string().describe("0x wallet that signed the registration message."),
       signature: z.string().describe("0x-prefixed ECDSA signature over the registration message."),
-      timestamp: z.string().describe("ISO 8601 timestamp used in the signed message (within 10 minutes of the call)."),
+      timestamp: z.string().describe("ISO 8601 timestamp used in the signed message (within an hour of the call)."),
       schema_url: z.string().optional().describe("Optional JSON Schema URL enabling the schema-conformance score."),
     },
     (a) =>
