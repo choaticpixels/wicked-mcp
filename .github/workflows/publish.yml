@@ -1,13 +1,12 @@
-name: Publish to npm
+name: Publish wickedapi-mcp (forwarding shim)
 
-# npm trusted publishing (OIDC): no npm token or one-time code is stored or
-# needed. Configure once on npmjs.com -> wickedapi-mcp -> Settings -> Trusted
-# Publisher -> GitHub Actions (repo choaticpixels/wicked-mcp, workflow publish.yml).
-# Run manually from the Actions tab, or push a v* tag.
+# Publishes the tiny `wickedapi-mcp` forwarding package in ./shim to npm via
+# trusted publishing (OIDC): no token or one-time code. The trusted publisher is
+# configured on npmjs.com for `wickedapi-mcp` -> GitHub Actions ->
+# choaticpixels/wicked-mcp, workflow publish.yml. The real package,
+# @wickedlabs/wicked-mcp, is published separately.
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
 
 permissions:
   contents: read
@@ -16,14 +15,15 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shim
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - run: npm test
       # Trusted publishing needs npm >= 11.5.1 (Node 22 ships npm 10).
       - run: npm install -g npm@^11.5.1
       - run: npm publish --access public --provenance

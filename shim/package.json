@@ -1,0 +1,29 @@
+{
+  "name": "wickedapi-mcp",
+  "version": "0.5.1",
+  "description": "MOVED: this package is now @wickedlabs/wicked-mcp. This release forwards to it, so existing `npx wickedapi-mcp` setups keep working.",
+  "type": "module",
+  "bin": {
+    "wickedapi-mcp": "bin.js"
+  },
+  "files": [
+    "bin.js",
+    "README.md"
+  ],
+  "dependencies": {
+    "@wickedlabs/wicked-mcp": "^0.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "author": "WickedLabs",
+  "homepage": "https://mcp.wickedapi.com",
+  "mcpName": "io.github.choaticpixels/wicked-mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/choaticpixels/wicked-mcp.git",
+    "directory": "shim"
+  },
+  "keywords": ["mcp", "model-context-protocol", "wicked", "x402"]
+}
