@@ -14,14 +14,14 @@ Copy-paste blocks for glama.ai, smithery.ai, and anywhere else that takes a name
 
 Alt taglines:
 - Give your agent a Base wallet. It pays for trading data, DeFi risk checks, and brokerage sync itself.
-- 73 tools across trading data, DeFi safety, and brokerage sync — before you've made an account.
+- 75 tools across trading data, DeFi safety, and brokerage sync — before you've made an account.
 - The MCP server that never asks you to sign up.
 
 ---
 
 ## Short description (~200 chars, for cards/previews)
 
-Real-time trading data, DeFi protocol health, token scam/rug-checks, and brokerage sync for agents — 73 tools, 6 resources, 3 workflow prompts. Configure one Base wallet key and it just works. No signup, no dashboard, no subscription.
+Real-time trading data, DeFi protocol health, token scam/rug-checks, and brokerage sync for agents — 75 tools, 6 resources, 3 workflow prompts. Configure one Base wallet key and it just works. No signup, no dashboard, no subscription.
 
 ---
 
@@ -33,12 +33,13 @@ Most APIs make you sign up, generate a key, and manage a subscription before you
 
 Don't have a wallet handy? It still works. Call any priced tool with no credentials at all and you'll get back the real x402 payment challenge (price, network, `payTo` address) instead of a dead end — and the token-risk tool is free no matter what.
 
-**73 tools across 10 live services, generated live from each service's own OpenAPI spec** — so this listing never drifts out of sync with what's actually deployed:
+**75 tools across 10 live services, generated live from each service's own OpenAPI spec** — so this listing never drifts out of sync with what's actually deployed:
 
 - **Trading Data API** (22 tools) — spot price & OHLCV for crypto and US equities/ETFs, Wilder ATR, Fair Value Gaps (standard ICT/LuxAlgo), ICT liquidity levels, perp funding/OI, long/short ratios, order-book depth, spot-vs-perp basis, Hyperliquid, Kalshi prediction markets, DeFi TVL, crypto Fear & Greed, a verified FOMC/CPI/jobs macro calendar, an earnings calendar, Ethereum gas, US Treasury yields, market clock, global crypto stats, and an AI momentum score across 10 liquid assets.
 - **Protocol Health Oracle** (6 tools) — live-scored DeFi protocol health across the full DefiLlama universe: GitHub activity, TVL trend, and treasury signals. Vet a dependency before you integrate it.
 - **Token Risk Oracle** (1 tool, always free) — real on-chain scam/rug-check signals for any EVM or Solana token contract: honeypot detection, mint authority, holder/LP concentration, trust-list status.
-- **Wicked Reputation, Registry, Identity, Sanity, Memory** (27 tools) — on-chain agent reputation, reliability scores for x402/MCP tools, Know-Your-Agent verification, hallucination checks, and persistent wallet-scoped memory. **x402 Paywall** (8 tools) — put any endpoint behind pay-per-call USDC.
+- **Wicked Reputation, Registry, Identity, Sanity** (24 tools) — on-chain agent reputation, reliability scores for x402/MCP tools, Know-Your-Agent verification, and hallucination checks. **x402 Paywall** (8 tools) — put any endpoint behind pay-per-call USDC.
+- **Wicked Memory** (8 tools) — persistent, wallet-scoped memory for agents: store, semantic search (real embeddings, ranked by cosine similarity), versioned history (updates never overwrite), and real hard delete. Writes are free; `memory_search` is the only metered call (free with a key, or 0.001 USDC via x402). Every call is signed by the agent's own wallet, so no other wallet can read its memories: `memory_prepare` returns the exact message to sign and this server never holds a key. Docs: [memory.wickedapi.com](https://memory.wickedapi.com).
 - **Broker Sync API** (6 tools) — real positions, balances, and transactions across 30+ brokerages through one normalized schema.
 
 **Plus 6 resources** (the platform directory, `llms.txt`, and each service's live endpoint catalog — readable without a tool call) **and 3 prompts** that chain tools into one-click workflows: `rug_check`, `vet_dependency`, `morning_briefing`.
@@ -56,7 +57,7 @@ Built by [WickedAPI](https://wickedapi.com). Full platform directory at [wickeda
 
 ## Tags / categories
 
-`trading` `crypto` `stocks` `market-data` `defi` `risk` `brokerage` `prediction-markets` `x402` `payments` `agents` `real-time-data` `technical-analysis`
+`trading` `crypto` `stocks` `market-data` `defi` `risk` `brokerage` `prediction-markets` `x402` `payments` `agents` `real-time-data` `technical-analysis` `agent-memory` `long-term-memory` `semantic-search` `wallet-auth`
 
 ---
 

@@ -2,7 +2,7 @@
 
 MCP server for the whole [Wicked](https://wickedapi.com) suite — trading data, DeFi protocol health, token safety, brokerage sync, agent identity, reputation, a tool-reliability registry, hallucination checks, persistent agent memory, and x402 paywalls, in one server.
 
-**73 tools** across 10 live services. The first four are generated automatically from each service's own live `openapi.json`, so the list always matches what's deployed; the rest are hand-written because they use wallet signatures and non-`/v1` routes:
+**75 tools** across 10 live services. The first four are generated automatically from each service's own live `openapi.json`, so the list always matches what's deployed; the rest are hand-written because they use wallet signatures and non-`/v1` routes:
 
 | Service | Tools | Auth |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ These tools never sign anything or hold a key. Agents with no wallet can still t
 
 ## Remote endpoint (no install)
 
-The same 73 tools are served over streamable HTTP at **`https://mcp.wickedapi.com/mcp`** (stateless, rate-limited per IP; the public deployment carries no personal keys, so paid calls return the x402 challenge). Point any streamable-HTTP MCP client at it. To self-host, build the `Dockerfile` (or `npm run build && npm run start:http`); see `.env.example` for `RATE_LIMIT_PER_MINUTE`, `ALLOWED_HOSTS` and `TRUSTED_CLIENT_IP_HEADER`.
+The same 75 tools are served over streamable HTTP at **`https://mcp.wickedapi.com/mcp`** (stateless, rate-limited per IP; the public deployment carries no personal keys, so paid calls return the x402 challenge). Point any streamable-HTTP MCP client at it. To self-host, build the `Dockerfile` (or `npm run build && npm run start:http`); see `.env.example` for `RATE_LIMIT_PER_MINUTE`, `ALLOWED_HOSTS` and `TRUSTED_CLIENT_IP_HEADER`.
 
 ## No signup required
 
