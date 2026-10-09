@@ -1,4 +1,4 @@
-# Directory listing copy — wickedapi-mcp
+# Directory listing copy — @wickedlabs/wicked-mcp
 
 Copy-paste blocks for glama.ai, smithery.ai, and anywhere else that takes a name/tagline/description/tags.
 
@@ -6,7 +6,7 @@ Copy-paste blocks for glama.ai, smithery.ai, and anywhere else that takes a name
 
 ## Name
 
-`Wicked MCP` (package: `wickedapi-mcp`, remote: `https://mcp.wickedapi.com/mcp`)
+`Wicked MCP` (package: `@wickedlabs/wicked-mcp`, remote: `https://mcp.wickedapi.com/mcp`)
 
 ## Tagline (one-liner, ~60 chars)
 
@@ -68,7 +68,7 @@ Built by [WickedAPI](https://wickedapi.com). Full platform directory at [wickeda
   "mcpServers": {
     "wickedapi": {
       "command": "npx",
-      "args": ["-y", "wickedapi-mcp"],
+      "args": ["-y", "@wickedlabs/wicked-mcp"],
       "env": {
         "WICKEDAPI_PAYER_PRIVATE_KEY": "0xyour-base-wallet-private-key"
       }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// stdio entry point: `npx wickedapi-mcp` for Claude Desktop, Cursor, .mcpb, etc.
+// stdio entry point: `npx @wickedlabs/wicked-mcp` for Claude Desktop, Cursor, .mcpb, etc.
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { buildServer, loadWorld } from "./server.js";
 

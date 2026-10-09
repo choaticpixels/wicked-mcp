@@ -40,7 +40,7 @@ Every tool hits a real endpoint gated by [x402](https://x402.org) (HTTP-native p
   "mcpServers": {
     "wickedapi": {
       "command": "npx",
-      "args": ["-y", "wickedapi-mcp"],
+      "args": ["-y", "@wickedlabs/wicked-mcp"],
       "env": {
         "WICKEDAPI_API_KEY": "your-key-here"
       }
@@ -56,7 +56,7 @@ Or for autonomous pay-per-call instead of a key:
   "mcpServers": {
     "wickedapi": {
       "command": "npx",
-      "args": ["-y", "wickedapi-mcp"],
+      "args": ["-y", "@wickedlabs/wicked-mcp"],
       "env": {
         "WICKEDAPI_PAYER_PRIVATE_KEY": "0xyour-base-wallet-private-key"
       }
@@ -79,7 +79,7 @@ Read without calling a tool — useful for a client that surfaces resources in i
 
 ```bash
 claude mcp add --transport http wicked https://mcp.wickedapi.com/mcp   # Claude Code, no install
-npx -y wickedapi-mcp                                                    # local stdio
+npx -y @wickedlabs/wicked-mcp                                                    # local stdio
 ```
 
 Claude Desktop / Cursor / VS Code config and per-framework starters: see the [cookbooks](https://github.com/choaticpixels/api_services/tree/main/cookbooks). The remote also serves a landing page at `/`, `/llms.txt`, an MCP server card at `/.well-known/mcp/server-card.json`, and aggregate per-tool call counts at `/stats` (counts only; no arguments or IPs).

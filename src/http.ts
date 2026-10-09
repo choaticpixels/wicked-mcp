@@ -83,7 +83,7 @@ async function main() {
       return send(
         res,
         429,
-        { error: `Rate limit exceeded: ${RATE_LIMIT_PER_MINUTE} requests/minute per IP. Run this server locally (npx wickedapi-mcp) for unlimited use.` },
+        { error: `Rate limit exceeded: ${RATE_LIMIT_PER_MINUTE} requests/minute per IP. Run this server locally (npx @wickedlabs/wicked-mcp) for unlimited use.` },
         { "retry-after": "60" }
       );
     }

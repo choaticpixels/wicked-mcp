@@ -86,7 +86,7 @@ async function buildFetcher(): Promise<typeof fetch> {
       "[wickedapi-mcp] WICKEDAPI_PAYER_PRIVATE_KEY is set, but the wallet-payment dependencies " +
         "(viem, x402-fetch) aren't installed in this distribution. Falling back to plain fetch — " +
         "calls without an API key will surface the 402 challenge instead of auto-paying. " +
-        "Use `npx wickedapi-mcp` for full auto-pay support."
+        "Use `npx @wickedlabs/wicked-mcp` for full auto-pay support."
     );
     return fetch;
   }

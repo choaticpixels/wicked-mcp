@@ -38,7 +38,7 @@ export function llmsTxt(tools: string[], version: string): string {
     "",
     "## Connect",
     `- Remote (streamable HTTP, no install): ${SITE}/mcp`,
-    "- Local (stdio): `npx -y wickedapi-mcp`",
+    "- Local (stdio): `npx -y @wickedlabs/wicked-mcp`",
     "- Claude Code: `claude mcp add --transport http wicked " + SITE + "/mcp`",
     "- No signup needed. Priced calls return a real x402 payment challenge (USDC on Base); set WICKEDAPI_API_KEY or a payer wallet locally for free-tier / auto-pay.",
     "- The public remote is rate limited per IP; run it locally with `npx` for unlimited use.",
@@ -52,7 +52,7 @@ export function llmsTxt(tools: string[], version: string): string {
     "## Links",
     "- Platform: https://wickedapi.com (service directory at https://wickedapi.com/services.json)",
     "- Source: https://github.com/choaticpixels/wicked-mcp",
-    "- npm: https://www.npmjs.com/package/wickedapi-mcp",
+    "- npm: https://www.npmjs.com/package/@wickedlabs/wicked-mcp",
     "- Registry: io.github.choaticpixels/wicked-mcp on https://registry.modelcontextprotocol.io",
     "- Server card: " + SITE + "/.well-known/mcp/server-card.json",
     "",
@@ -72,7 +72,7 @@ export function serverCard(tools: string[], version: string) {
     transport: { type: "streamable-http", endpoint: "/mcp" },
     capabilities: { tools: { listChanged: false }, resources: {}, prompts: {} },
     authentication: { required: false, note: "Optional keys unlock free tiers; otherwise paid calls return an x402 challenge." },
-    packages: [{ registry: "npm", name: "wickedapi-mcp", transport: "stdio" }],
+    packages: [{ registry: "npm", name: "@wickedlabs/wicked-mcp", transport: "stdio" }],
     tools: tools.map((name) => ({ name })),
   };
 }
@@ -97,10 +97,10 @@ code{display:block;margin-top:8px;font-size:13px;color:var(--mut);word-break:bre
 <h3>Connect in one line</h3>
 <pre>claude mcp add --transport http wicked ${SITE}/mcp</pre>
 <pre>{ "mcpServers": { "wicked": { "url": "${SITE}/mcp" } } }</pre>
-<pre>npx -y wickedapi-mcp   # local, stdio - unlimited, supports your API key or payer wallet</pre>
+<pre>npx -y @wickedlabs/wicked-mcp   # local, stdio - unlimited, supports your API key or payer wallet</pre>
 <p>No signup. Priced calls return a real x402 payment challenge (USDC on Base). The public endpoint is rate limited per IP.</p>
 <h3>What's inside</h3>
 ${rows}
-<footer><a href="https://wickedapi.com">wickedapi.com</a> &middot; <a href="https://github.com/choaticpixels/wicked-mcp">GitHub</a> &middot; <a href="https://www.npmjs.com/package/wickedapi-mcp">npm</a> &middot; <a href="/llms.txt">llms.txt</a> &middot; <a href="/.well-known/mcp/server-card.json">server card</a> &middot; <a href="/stats">usage</a></footer>
+<footer><a href="https://wickedapi.com">wickedapi.com</a> &middot; <a href="https://github.com/choaticpixels/wicked-mcp">GitHub</a> &middot; <a href="https://www.npmjs.com/package/@wickedlabs/wicked-mcp">npm</a> &middot; <a href="/llms.txt">llms.txt</a> &middot; <a href="/.well-known/mcp/server-card.json">server card</a> &middot; <a href="/stats">usage</a></footer>
 </main></body></html>`;
 }

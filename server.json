@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "wickedapi-mcp",
+      "identifier": "@wickedlabs/wicked-mcp",
       "version": "0.5.0",
       "transport": {
         "type": "stdio"
