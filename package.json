@@ -1,6 +1,6 @@
 {
   "name": "wickedapi-mcp",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "MCP server for the whole Wicked suite — trading data, DeFi protocol health, token safety, brokerage sync, agent identity, reputation, tool registry, hallucination checks, persistent memory, and x402 paywalls. 75 tools, 6 resources, 3 prompts. No signup required: pay per call in USDC via x402, or use a partner API key.",
   "type": "module",
   "bin": {
