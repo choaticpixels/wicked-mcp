@@ -7,6 +7,12 @@ name: Publish wickedapi-mcp (forwarding shim)
 # @wickedlabs/wicked-mcp, is published separately.
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: "What to run against wickedapi-mcp"
+        type: choice
+        options: [publish, deprecate-old-versions]
+        default: publish
 
 permissions:
   contents: read
@@ -26,4 +32,9 @@ jobs:
           registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm >= 11.5.1 (Node 22 ships npm 10).
       - run: npm install -g npm@^11.5.1
-      - run: npm publish --access public --provenance
+      - if: ${{ inputs.action == 'publish' }}
+        run: npm publish --access public --provenance
+      # Mark every pre-shim version as moved. Needs write access to the package;
+      # trusted publishing is documented for `npm publish` only, so this may be refused.
+      - if: ${{ inputs.action == 'deprecate-old-versions' }}
+        run: npm deprecate "wickedapi-mcp@<0.5.1" "Moved to @wickedlabs/wicked-mcp. Use wickedapi-mcp@latest (forwards automatically) or switch to npx -y @wickedlabs/wicked-mcp."
